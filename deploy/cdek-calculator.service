@@ -1,0 +1,25 @@
+# systemd-юнит для калькулятора СДЭК.
+# Скопируйте в /etc/systemd/system/cdek-calculator.service и поправьте пути.
+#
+#   sudo cp deploy/cdek-calculator.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cdek-calculator
+
+[Unit]
+Description=CDEK delivery calculator (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+# Пользователь без прав root, под которым лежит проект
+User=deploy
+WorkingDirectory=/opt/calc_sdek
+# .env.local Next.js прочитает сам из WorkingDirectory
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
