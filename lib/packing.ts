@@ -113,6 +113,54 @@ function toPlace(article: string, spec: PlaceSpec, count: number): PlaceDto {
   };
 }
 
+/** Максимальная высота «стопки» при поштучной укладке, см */
+const MAX_STACK_CM = 150;
+
+/**
+ * Поштучная укладка: единицы складываются в одно место стопкой вдоль
+ * наименьшего габарита (вес и объём суммируются). Если стопка превышает
+ * MAX_STACK_CM — количество делится на несколько примерно равных мест.
+ */
+function stackUnits(article: string, unit: PlaceSpec, qty: number): PlaceDto[] {
+  if (qty <= 0) return [];
+
+  const dims = [unit.lengthCm, unit.widthCm, unit.heightCm];
+  const minIndex = dims.indexOf(Math.min(...dims));
+  const minDim = dims[minIndex];
+
+  const maxPerStack = Math.max(1, Math.floor(MAX_STACK_CM / minDim));
+  const stacks = Math.ceil(qty / maxPerStack);
+
+  // Раскладываем поровну: 20 шт при максимуме 7 → стопки 7, 7, 6
+  const baseSize = Math.floor(qty / stacks);
+  const withExtra = qty % stacks; // столько стопок получают +1 единицу
+
+  const places: PlaceDto[] = [];
+  const addStack = (unitsInStack: number, count: number) => {
+    if (count <= 0 || unitsInStack <= 0) return;
+    const stackedDims = [...dims];
+    stackedDims[minIndex] = Math.round(minDim * unitsInStack * 100) / 100;
+    places.push({
+      article,
+      label:
+        unitsInStack === 1
+          ? "Поштучно (1 шт)"
+          : `Поштучно, стопка ${unitsInStack} шт`,
+      unitsPerPlace: unitsInStack,
+      count,
+      lengthCm: stackedDims[0],
+      widthCm: stackedDims[1],
+      heightCm: stackedDims[2],
+      weightKg: Math.round(unit.weightKg * unitsInStack * 1000) / 1000,
+      volumeM3:
+        (stackedDims[0] * stackedDims[1] * stackedDims[2]) / 1_000_000,
+    });
+  };
+  addStack(baseSize + 1, withExtra);
+  addStack(baseSize, stacks - withExtra);
+  return places;
+}
+
 interface ItemResult {
   item: ItemPackingDto;
   places: PlaceDto[];
@@ -171,10 +219,10 @@ function packItem(item: PositionInput, catalog: Catalog): ItemResult {
       }
     }
 
-    // 3. Остаток — поштучно
+    // 3. Остаток — поштучно, стопкой в одно место (или несколько, если высоко)
     if (remaining > 0) {
       if (unit) {
-        places.push(toPlace(article, unit, remaining));
+        places.push(...stackUnits(article, unit, remaining));
         if (usableRules.length > 0) {
           warnings.push(
             `По артикулу ${article} нет правила упаковки для остатка ${remaining} шт — остаток рассчитан поштучно по данным справочника.`
