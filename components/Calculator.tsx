@@ -25,6 +25,17 @@ interface Position extends PositionInput {
   name: string;
 }
 
+/** Ставка НДС, добавляется к стоимости из расчёта СДЭК */
+const VAT_RATE = 0.22;
+/** Наценка к «Итого», когда доставку оплачивает клиент */
+const CLIENT_PAYS_MARKUP = 0.05;
+
+const rub = (value: number) =>
+  value.toLocaleString("ru-RU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -321,6 +332,7 @@ export default function Calculator() {
   const [fromPvz, setFromPvz] = useState<PvzDto | null>(null);
   const [toPvz, setToPvz] = useState<PvzDto | null>(null);
   const [mode, setMode] = useState<DeliveryMode>("warehouse-warehouse");
+  const [clientPays, setClientPays] = useState(false);
 
   // Смена города сбрасывает выбранный в нём ПВЗ
   const setFromCity = (city: CityDto | null) => {
@@ -865,6 +877,18 @@ export default function Calculator() {
               ))}
             </select>
           </div>
+          <div className="field">
+            <label>Платит клиент</label>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={clientPays}
+                onChange={(e) => setClientPays(e.target.checked)}
+              />
+              <span className="switch-slider" />
+              <span className="switch-text">{clientPays ? "Да" : "Нет"}</span>
+            </label>
+          </div>
         </div>
         <div className="delivery-row">
           {mode.startsWith("door") ? (
@@ -964,39 +988,56 @@ export default function Calculator() {
             </ul>
           )}
           {quote?.tariffs && quote.tariffs.length > 0 && (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Тариф</th>
-                    <th>Стоимость, ₽</th>
-                    <th>Срок, дн.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quote.tariffs.map((t: TariffDto) => (
-                    <tr key={t.code}>
-                      <td>
-                        <strong>{t.name}</strong>
-                        {t.description && (
-                          <div className="meta-line">{t.description}</div>
-                        )}
-                      </td>
-                      <td>
-                        <strong>
-                          {t.deliverySum.toLocaleString("ru-RU")}
-                        </strong>
-                      </td>
-                      <td>
-                        {t.periodMin === t.periodMax
-                          ? t.periodMin
-                          : `${t.periodMin}–${t.periodMax}`}
-                      </td>
+            <>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Тариф</th>
+                      <th>Стоимость, ₽</th>
+                      <th>НДС ({Math.round(VAT_RATE * 100)}%), ₽</th>
+                      <th>Итого к оплате, ₽</th>
+                      <th>Срок, дн.</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {quote.tariffs.map((t: TariffDto) => {
+                      const vat = t.deliverySum * VAT_RATE;
+                      const total =
+                        (t.deliverySum + vat) *
+                        (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1);
+                      return (
+                        <tr key={t.code}>
+                          <td>
+                            <strong>{t.name}</strong>
+                            {t.description && (
+                              <div className="meta-line">{t.description}</div>
+                            )}
+                          </td>
+                          <td>{rub(t.deliverySum)}</td>
+                          <td>{rub(vat)}</td>
+                          <td>
+                            <strong>{rub(total)}</strong>
+                          </td>
+                          <td>
+                            {t.periodMin === t.periodMax
+                              ? t.periodMin
+                              : `${t.periodMin}–${t.periodMax}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="meta-line">
+                Итого = стоимость СДЭК + НДС {Math.round(VAT_RATE * 100)}%
+                {clientPays
+                  ? `, плюс ${Math.round(CLIENT_PAYS_MARKUP * 100)}% (платит клиент)`
+                  : ""}
+                .
+              </p>
+            </>
           )}
         </div>
       )}

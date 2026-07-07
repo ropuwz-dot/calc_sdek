@@ -280,6 +280,60 @@ a {
   width: 110px;
 }
 
+/* --- Переключатель да/нет --- */
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cdd3db;
+  position: relative;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.switch-slider::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.switch input:checked + .switch-slider {
+  background: #1a5fd0;
+}
+
+.switch input:checked + .switch-slider::after {
+  transform: translateX(18px);
+}
+
+.switch-text {
+  font-size: 15px;
+  font-weight: 600;
+}
+
 .qty-input {
   width: 80px;
   border: 1px solid #cdd3db;
