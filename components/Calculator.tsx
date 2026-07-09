@@ -95,6 +95,88 @@ async function apiPost<T>(url: string, body: unknown): Promise<T> {
   return data;
 }
 
+// ---------- Улица с подсказками DaData (для СДЭК) ----------
+
+function StreetField({
+  label,
+  cityName,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  /** Город для фильтра подсказок; null — подсказки не запрашиваются */
+  cityName: string | null;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const [options, setOptions] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState(false);
+  const debounced = useDebounced(value, 300);
+
+  useEffect(() => {
+    if (!cityName || picked || debounced.trim().length < 2) {
+      setOptions([]);
+      setOpen(false);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ streets: string[] }>(
+      `/api/streets?city=${encodeURIComponent(cityName)}&q=${encodeURIComponent(debounced)}`
+    )
+      .then((data) => {
+        if (!cancelled) {
+          setOptions(data.streets);
+          setOpen(data.streets.length > 0);
+        }
+      })
+      // Подсказки — необязательное удобство: при ошибке просто без них
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [debounced, cityName, picked]);
+
+  return (
+    <div className="field grow">
+      <label>{label}</label>
+      <div className="suggest-wrap">
+        <input
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setPicked(false);
+          }}
+          onFocus={() => options.length > 0 && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 200)}
+        />
+        {open && options.length > 0 && (
+          <ul className="suggest-list">
+            {options.map((street) => (
+              <li key={street}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(street);
+                    setPicked(true);
+                    setOpen(false);
+                  }}
+                >
+                  {street}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Подсказка города ----------
 
 function CityField({
@@ -1515,15 +1597,13 @@ export default function Calculator() {
         <div className="delivery-row">
           {mode.startsWith("door") ? (
             <>
-              <div className="field grow">
-                <label>Улица забора</label>
-                <input
-                  type="text"
-                  value={fromStreet}
-                  placeholder="ул. Ленина"
-                  onChange={(e) => setFromStreet(e.target.value)}
-                />
-              </div>
+              <StreetField
+                label="Улица забора"
+                cityName={fromCity?.name ?? null}
+                value={fromStreet}
+                onChange={setFromStreet}
+                placeholder="ул. Ленина"
+              />
               <div className="field dim-field">
                 <label>Дом</label>
                 <input
@@ -1564,15 +1644,13 @@ export default function Calculator() {
           )}
           {mode.endsWith("door") ? (
             <>
-              <div className="field grow">
-                <label>Улица доставки</label>
-                <input
-                  type="text"
-                  value={toStreet}
-                  placeholder="пр. Мира"
-                  onChange={(e) => setToStreet(e.target.value)}
-                />
-              </div>
+              <StreetField
+                label="Улица доставки"
+                cityName={toCity?.name ?? null}
+                value={toStreet}
+                onChange={setToStreet}
+                placeholder="пр. Мира"
+              />
               <div className="field dim-field">
                 <label>Дом</label>
                 <input
