@@ -20,6 +20,17 @@ const VALID_MODES: DeliveryMode[] = [
 ];
 
 export async function POST(request: NextRequest) {
+  try {
+    return await handle(request);
+  } catch {
+    return NextResponse.json(
+      { ok: false, message: "Внутренняя ошибка при обращении к Деловым Линиям." },
+      { status: 500 }
+    );
+  }
+}
+
+async function handle(request: NextRequest) {
   const user = await requireSheetsUser();
   if (!user.ok) {
     return NextResponse.json(

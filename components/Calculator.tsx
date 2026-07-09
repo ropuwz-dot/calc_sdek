@@ -61,9 +61,25 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+/**
+ * Разбор ответа API с защитой от не-JSON: если прокси (nginx) подменил
+ * ответ HTML-страницей ошибки или роут упал, показываем понятное
+ * сообщение вместо «JSON.parse: unexpected character».
+ */
+async function parseJson<T>(res: Response): Promise<T & { message?: string }> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T & { message?: string };
+  } catch {
+    throw new Error(
+      `Сервер вернул неожиданный ответ (HTTP ${res.status}). Обычно это значит, что на сервере не заданы переменные окружения (например, ключи ДЛ/СДЭК) — проверьте .env.local и логи приложения.`
+    );
+  }
+}
+
 async function apiGet<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  const data = (await res.json()) as T & { message?: string };
+  const data = await parseJson<T>(res);
   if (!res.ok) throw new Error(data.message ?? `Ошибка запроса (${res.status})`);
   return data;
 }
@@ -74,7 +90,7 @@ async function apiPost<T>(url: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = (await res.json()) as T & { message?: string };
+  const data = await parseJson<T>(res);
   if (!res.ok) throw new Error(data.message ?? `Ошибка запроса (${res.status})`);
   return data;
 }
@@ -788,10 +804,7 @@ export default function Calculator() {
           items: current.map(({ article, qty }) => ({ article, qty })),
         }),
       });
-      const data = (await res.json()) as {
-        packing?: PackingDto;
-        message?: string;
-      };
+      const data = await parseJson<{ packing?: PackingDto }>(res);
       if (packRequestId.current !== requestId) return;
       if (!res.ok || !data.packing) {
         setPackError(data.message ?? "Не удалось рассчитать упаковку.");
@@ -800,9 +813,13 @@ export default function Calculator() {
         setPacking(data.packing);
         setPackError(null);
       }
-    } catch {
+    } catch (e) {
       if (packRequestId.current === requestId) {
-        setPackError("Не удалось рассчитать упаковку. Проверьте соединение.");
+        setPackError(
+          e instanceof Error
+            ? e.message
+            : "Не удалось рассчитать упаковку. Проверьте соединение."
+        );
       }
     } finally {
       if (packRequestId.current === requestId) setPackLoading(false);
@@ -936,7 +953,7 @@ export default function Calculator() {
           toPvzCode: mode.endsWith("warehouse") && toPvz ? toPvz.code : "",
         }),
       });
-      const data = (await res.json()) as QuoteResponse;
+      const data = await parseJson<QuoteResponse>(res);
       if (data.packing && positions.length > 0) setPacking(data.packing);
       if (!res.ok || !data.ok) {
         setQuoteError(data.message ?? "СДЭК не смог рассчитать доставку.");
@@ -944,8 +961,12 @@ export default function Calculator() {
       } else {
         setQuote(data);
       }
-    } catch {
-      setQuoteError("Не удалось выполнить расчёт. Проверьте соединение.");
+    } catch (e) {
+      setQuoteError(
+        e instanceof Error
+          ? e.message
+          : "Не удалось выполнить расчёт. Проверьте соединение."
+      );
     } finally {
       setQuoteLoading(false);
     }
@@ -1005,7 +1026,7 @@ export default function Calculator() {
               : undefined,
         }),
       });
-      const data = (await res.json()) as DellinQuoteResponse;
+      const data = await parseJson<DellinQuoteResponse>(res);
       if (data.packing && positions.length > 0) setPacking(data.packing);
       if (!res.ok || !data.ok) {
         setDellinQuoteError(
@@ -1016,9 +1037,11 @@ export default function Calculator() {
       } else {
         setDellinQuote(data);
       }
-    } catch {
+    } catch (e) {
       setDellinQuoteError(
-        "Не удалось выполнить расчет Деловых Линий. Проверьте соединение."
+        e instanceof Error
+          ? e.message
+          : "Не удалось выполнить расчет Деловых Линий. Проверьте соединение."
       );
     } finally {
       setDellinQuoteLoading(false);
