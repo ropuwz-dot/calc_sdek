@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   CityDto,
   DeliveryMode,
+  DellinCityDto,
+  DellinQuoteResponse,
+  DellinStreetDto,
+  DellinTerminalDto,
+  DellinTariffDto,
   ManualPlaceInput,
   PackingDto,
   PlaceDto,
@@ -25,6 +30,9 @@ interface Position extends PositionInput {
   name: string;
 }
 
+type ManualPlace = ManualPlaceInput & { id: number };
+type DeliveryTab = "cdek" | "dellin";
+
 /** Ставка НДС, добавляется к стоимости из расчёта СДЭК */
 const VAT_RATE = 0.22;
 /** Наценка к «Итого», когда доставку оплачивает клиент */
@@ -35,6 +43,14 @@ const rub = (value: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+const shortTerminalAddress = (address: string) => {
+  const normalized = address.replace(/^Россия,\s*/i, "").trim();
+  const streetMatch = normalized.match(
+    /((?:ул|улица|пр-кт|проспект|пр|пер|переулок|ш|шоссе|пл|площадь|наб|набережная|б-р|бульвар|проезд|тракт|дорога)\.?\s+.+)$/i
+  );
+  return streetMatch?.[1] ?? normalized;
+};
 
 function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -47,6 +63,17 @@ function useDebounced<T>(value: T, delayMs: number): T {
 
 async function apiGet<T>(url: string): Promise<T> {
   const res = await fetch(url);
+  const data = (await res.json()) as T & { message?: string };
+  if (!res.ok) throw new Error(data.message ?? `Ошибка запроса (${res.status})`);
+  return data;
+}
+
+async function apiPost<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   const data = (await res.json()) as T & { message?: string };
   if (!res.ok) throw new Error(data.message ?? `Ошибка запроса (${res.status})`);
   return data;
@@ -145,6 +172,336 @@ function CityField({
 }
 
 // ---------- Подсказка ПВЗ ----------
+
+function DellinCityField({
+  label,
+  value,
+  onSelect,
+}: {
+  label: string;
+  value: DellinCityDto | null;
+  onSelect: (city: DellinCityDto | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<DellinCityDto[]>([]);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const debouncedQuery = useDebounced(query, 300);
+
+  useEffect(() => {
+    if (value || debouncedQuery.trim().length < 2) {
+      setOptions([]);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ cities: DellinCityDto[] }>(
+      `/api/dellin/locations?q=${encodeURIComponent(debouncedQuery)}`
+    )
+      .then((data) => {
+        if (!cancelled) {
+          setOptions(data.cities);
+          setOpen(true);
+          setError(null);
+        }
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, value]);
+
+  return (
+    <div className="field grow">
+      <label>{label}</label>
+      {value ? (
+        <div className="selected-chip">
+          <span>
+            {value.name}
+            {value.regionName ? `, ${value.regionName}` : ""}
+          </span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              onSelect(null);
+              setQuery("");
+            }}
+          >
+            изменить
+          </button>
+        </div>
+      ) : (
+        <div className="suggest-wrap">
+          <input
+            type="text"
+            value={query}
+            placeholder="Начните вводить город..."
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => options.length > 0 && setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 200)}
+          />
+          {open && options.length > 0 && (
+            <ul className="suggest-list">
+              {options.map((city) => (
+                <li key={`${city.code}-${city.cityId}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(city);
+                      setOpen(false);
+                    }}
+                  >
+                    {city.name}
+                    <span className="suggest-meta">
+                      {city.regionName ? ` ${city.regionName}` : ""}
+                      {city.isTerminal ? " · есть терминал" : ""}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {error && <p className="field-error">{error}</p>}
+    </div>
+  );
+}
+
+function DellinStreetField({
+  label,
+  city,
+  value,
+  onSelect,
+}: {
+  label: string;
+  city: DellinCityDto | null;
+  value: DellinStreetDto | null;
+  onSelect: (street: DellinStreetDto | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<DellinStreetDto[]>([]);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const debouncedQuery = useDebounced(query, 300);
+
+  useEffect(() => {
+    setQuery("");
+    setOptions([]);
+    setOpen(false);
+    setError(null);
+    onSelect(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city?.cityId]);
+
+  useEffect(() => {
+    if (!city || value || debouncedQuery.trim().length < 2) {
+      setOptions([]);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ streets: DellinStreetDto[] }>(
+      `/api/dellin/streets?cityId=${city.cityId}&q=${encodeURIComponent(
+        debouncedQuery
+      )}`
+    )
+      .then((data) => {
+        if (!cancelled) {
+          setOptions(data.streets);
+          setOpen(true);
+          setError(null);
+        }
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [city, debouncedQuery, value]);
+
+  return (
+    <div className="field grow">
+      <label>{label}</label>
+      {value ? (
+        <div className="selected-chip">
+          <span>{value.fullName}</span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              onSelect(null);
+              setQuery("");
+            }}
+          >
+            изменить
+          </button>
+        </div>
+      ) : (
+        <div className="suggest-wrap">
+          <input
+            type="text"
+            value={query}
+            disabled={!city}
+            placeholder={city ? "Начните вводить улицу..." : "Сначала выберите город"}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => options.length > 0 && setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 200)}
+          />
+          {open && options.length > 0 && (
+            <ul className="suggest-list">
+              {options.map((street) => (
+                <li key={street.code}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(street);
+                      setOpen(false);
+                    }}
+                  >
+                    {street.fullName}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {error && <p className="field-error">{error}</p>}
+    </div>
+  );
+}
+
+function DellinTerminalField({
+  label,
+  city,
+  direction,
+  value,
+  onSelect,
+  items,
+  manualPlaces,
+  enabled,
+}: {
+  label: string;
+  city: DellinCityDto | null;
+  direction: "derival" | "arrival";
+  value: DellinTerminalDto | null;
+  onSelect: (terminal: DellinTerminalDto | null) => void;
+  items: Position[];
+  manualPlaces: ManualPlace[];
+  enabled: boolean;
+}) {
+  const [terminals, setTerminals] = useState<DellinTerminalDto[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Дебаунс по составу мест: изменение позиций не должно дёргать
+  // подбор терминалов (каталог + API ДЛ) на каждый клик.
+  const placesKey = useDebounced(
+    JSON.stringify([
+      items.map((p) => [p.article, p.qty]),
+      manualPlaces.map(({ id, ...place }) => {
+        void id;
+        return place;
+      }),
+    ]),
+    600
+  );
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const manualRef = useRef(manualPlaces);
+  manualRef.current = manualPlaces;
+
+  useEffect(() => {
+    onSelect(null);
+    setTerminals([]);
+    setError(null);
+    if (!city || !enabled) return;
+
+    let cancelled = false;
+    setLoading(true);
+    apiPost<{ terminals: DellinTerminalDto[] }>("/api/dellin/terminals", {
+      cityCode: city.code,
+      direction,
+      items: itemsRef.current.map(({ article, qty }) => ({ article, qty })),
+      manualPlaces: manualRef.current.map(({ id, ...place }) => {
+        void id;
+        return place;
+      }),
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setTerminals(data.terminals);
+        onSelect(
+          data.terminals.find((terminal) => terminal.isDefault) ??
+            data.terminals[0] ??
+            null
+        );
+        setError(null);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city, direction, enabled, placesKey]);
+
+  return (
+    <div className="field grow">
+      <label>{label}</label>
+      {!city ? (
+        <p className="meta-line" style={{ margin: "8px 0 0" }}>
+          Сначала выберите город.
+        </p>
+      ) : !enabled ? (
+        <p className="meta-line" style={{ margin: "8px 0 0" }}>
+          Добавьте товарные позиции или ручное место.
+        </p>
+      ) : loading ? (
+        <p className="meta-line" style={{ margin: "8px 0 0" }}>
+          Загружаем терминалы...
+        </p>
+      ) : terminals.length > 0 ? (
+        <>
+          <select
+            value={value?.id ?? ""}
+            onChange={(e) => {
+              const id = Number(e.target.value);
+              onSelect(terminals.find((terminal) => terminal.id === id) ?? null);
+            }}
+          >
+            {terminals.map((terminal) => (
+              <option key={terminal.id} value={terminal.id}>
+                {terminal.name}
+                {terminal.address
+                  ? ` — ${shortTerminalAddress(terminal.address)}`
+                  : ""}
+              </option>
+            ))}
+          </select>
+          {value && (
+            <p className="terminal-address">
+              {value.address || "Адрес терминала не указан в справочнике ДЛ."}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="meta-line" style={{ margin: "8px 0 0" }}>
+          Нет доступных терминалов.
+        </p>
+      )}
+      {error && <p className="field-error">{error}</p>}
+    </div>
+  );
+}
 
 function PvzField({
   label,
@@ -313,7 +670,7 @@ export default function Calculator() {
 
   // Ручные места (без номенклатуры)
   const [manualPlaces, setManualPlaces] = useState<
-    (ManualPlaceInput & { id: number })[]
+    ManualPlace[]
   >([]);
   const [manualForm, setManualForm] = useState({
     lengthCm: "",
@@ -333,19 +690,59 @@ export default function Calculator() {
   const [toPvz, setToPvz] = useState<PvzDto | null>(null);
   const [mode, setMode] = useState<DeliveryMode>("warehouse-warehouse");
   const [clientPays, setClientPays] = useState(false);
+  const [activeDeliveryTab, setActiveDeliveryTab] =
+    useState<DeliveryTab>("cdek");
 
-  // Смена города сбрасывает выбранный в нём ПВЗ
+  // Смена города сбрасывает выбранный в нём ПВЗ и устаревший результат расчёта
   const setFromCity = (city: CityDto | null) => {
     setFromCityState(city);
     setFromPvz(null);
+    setQuote(null);
+    setQuoteError(null);
   };
   const setToCity = (city: CityDto | null) => {
     setToCityState(city);
     setToPvz(null);
+    setQuote(null);
+    setQuoteError(null);
   };
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  const [dellinFromCity, setDellinFromCity] =
+    useState<DellinCityDto | null>(null);
+  const [dellinToCity, setDellinToCity] = useState<DellinCityDto | null>(null);
+  const [dellinFromStreet, setDellinFromStreet] =
+    useState<DellinStreetDto | null>(null);
+  const [dellinToStreet, setDellinToStreet] =
+    useState<DellinStreetDto | null>(null);
+  const [dellinFromTerminal, setDellinFromTerminal] =
+    useState<DellinTerminalDto | null>(null);
+  const [dellinToTerminal, setDellinToTerminal] =
+    useState<DellinTerminalDto | null>(null);
+  const [dellinFromHouse, setDellinFromHouse] = useState("");
+  const [dellinToHouse, setDellinToHouse] = useState("");
+  const [dellinFromFlat, setDellinFromFlat] = useState("");
+  const [dellinToFlat, setDellinToFlat] = useState("");
+  const [dellinMode, setDellinMode] =
+    useState<DeliveryMode>("warehouse-warehouse");
+  const [dellinQuote, setDellinQuote] =
+    useState<DellinQuoteResponse | null>(null);
+  const [dellinQuoteLoading, setDellinQuoteLoading] = useState(false);
+  const [dellinQuoteError, setDellinQuoteError] = useState<string | null>(null);
+
+  // Смена города/режима ДЛ сбрасывает устаревший результат расчёта
+  const selectDellinFromCity = (city: DellinCityDto | null) => {
+    setDellinFromCity(city);
+    setDellinQuote(null);
+    setDellinQuoteError(null);
+  };
+  const selectDellinToCity = (city: DellinCityDto | null) => {
+    setDellinToCity(city);
+    setDellinQuote(null);
+    setDellinQuoteError(null);
+  };
 
   const packRequestId = useRef(0);
 
@@ -416,6 +813,8 @@ export default function Calculator() {
     setPositions(next);
     setQuote(null);
     setQuoteError(null);
+    setDellinQuote(null);
+    setDellinQuoteError(null);
     void recalcPacking(next);
   };
 
@@ -476,12 +875,16 @@ export default function Calculator() {
     setManualForm({ lengthCm: "", widthCm: "", heightCm: "", weightKg: "", count: "1" });
     setQuote(null);
     setQuoteError(null);
+    setDellinQuote(null);
+    setDellinQuoteError(null);
   };
 
   const removeManualPlace = (id: number) => {
     setManualPlaces((prev) => prev.filter((m) => m.id !== id));
     setQuote(null);
     setQuoteError(null);
+    setDellinQuote(null);
+    setDellinQuoteError(null);
   };
 
   /** Ручные места в формате мест упаковки — для таблицы, итогов и проверок ПВЗ */
@@ -548,12 +951,102 @@ export default function Calculator() {
     }
   };
 
+  const calcDellinDelivery = async () => {
+    if (!dellinFromCity || !dellinToCity || totalPlacesAll === 0) return;
+    setDellinQuoteLoading(true);
+    setDellinQuoteError(null);
+    setDellinQuote(null);
+    try {
+      const res = await fetch("/api/dellin/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: positions.map(({ article, qty }) => ({ article, qty })),
+          manualPlaces: manualPlaces.map(({ id, ...place }) => {
+            void id;
+            return place;
+          }),
+          fromCityCode: dellinFromCity.code,
+          toCityCode: dellinToCity.code,
+          fromCityName: [dellinFromCity.name, dellinFromCity.regionName]
+            .filter(Boolean)
+            .join(", "),
+          toCityName: [dellinToCity.name, dellinToCity.regionName]
+            .filter(Boolean)
+            .join(", "),
+          mode: dellinMode,
+          fromStreetCode:
+            dellinMode.startsWith("door") && dellinFromStreet
+              ? dellinFromStreet.code
+              : "",
+          fromHouse: dellinMode.startsWith("door") ? dellinFromHouse : "",
+          fromFlat: dellinMode.startsWith("door") ? dellinFromFlat : "",
+          toStreetCode:
+            dellinMode.endsWith("door") && dellinToStreet
+              ? dellinToStreet.code
+              : "",
+          toHouse: dellinMode.endsWith("door") ? dellinToHouse : "",
+          toFlat: dellinMode.endsWith("door") ? dellinToFlat : "",
+          fromAddress:
+            dellinMode.startsWith("door") && dellinFromStreet
+              ? `${dellinFromStreet.fullName}, ${dellinFromHouse}`
+              : "",
+          toAddress:
+            dellinMode.endsWith("door") && dellinToStreet
+              ? `${dellinToStreet.fullName}, ${dellinToHouse}`
+              : "",
+          fromTerminalId:
+            dellinMode.startsWith("warehouse") && dellinFromTerminal
+              ? dellinFromTerminal.id
+              : undefined,
+          toTerminalId:
+            dellinMode.endsWith("warehouse") && dellinToTerminal
+              ? dellinToTerminal.id
+              : undefined,
+        }),
+      });
+      const data = (await res.json()) as DellinQuoteResponse;
+      if (data.packing && positions.length > 0) setPacking(data.packing);
+      if (!res.ok || !data.ok) {
+        setDellinQuoteError(
+          data.message ??
+            "Деловые Линии не смогли рассчитать доставку."
+        );
+        if (data.tariffs) setDellinQuote(data);
+      } else {
+        setDellinQuote(data);
+      }
+    } catch {
+      setDellinQuoteError(
+        "Не удалось выполнить расчет Деловых Линий. Проверьте соединение."
+      );
+    } finally {
+      setDellinQuoteLoading(false);
+    }
+  };
+
   const canCalc =
     canShipAll &&
     fromCity !== null &&
     toCity !== null &&
     !packLoading &&
     !quoteLoading;
+
+  const canDellinCalc =
+    canShipAll &&
+    dellinFromCity !== null &&
+    dellinToCity !== null &&
+    (!dellinMode.startsWith("door") ||
+      (dellinFromStreet !== null && dellinFromHouse.trim() !== "")) &&
+    (!dellinMode.endsWith("door") ||
+      (dellinToStreet !== null && dellinToHouse.trim() !== "")) &&
+    (!dellinMode.startsWith("warehouse") || dellinFromTerminal !== null) &&
+    (!dellinMode.endsWith("warehouse") || dellinToTerminal !== null) &&
+    !packLoading &&
+    !dellinQuoteLoading;
+
+  const bestCdekTariff = quote?.tariffs?.[0];
+  const bestDellinTariff = dellinQuote?.tariffs?.[0];
 
   return (
     <>
@@ -857,6 +1350,93 @@ export default function Calculator() {
       )}
 
       {/* Доставка */}
+      <div className="delivery-tabs" role="tablist" aria-label="Транспортная компания">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeDeliveryTab === "cdek"}
+          className={activeDeliveryTab === "cdek" ? "active" : ""}
+          onClick={() => setActiveDeliveryTab("cdek")}
+        >
+          СДЭК
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeDeliveryTab === "dellin"}
+          className={activeDeliveryTab === "dellin" ? "active" : ""}
+          onClick={() => setActiveDeliveryTab("dellin")}
+        >
+          Деловые Линии
+        </button>
+      </div>
+
+      {bestCdekTariff && bestDellinTariff ? (
+        <div className="card">
+          <h2>Сравнение</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ТК</th>
+                  <th>Лучший тариф</th>
+                  <th>Стоимость, ₽</th>
+                  <th>Итого к оплате, ₽</th>
+                  <th>Срок, дн.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    carrier: "СДЭК",
+                    name: bestCdekTariff.name,
+                    sum: bestCdekTariff.deliverySum,
+                    includesVat: false,
+                    min: bestCdekTariff.periodMin,
+                    max: bestCdekTariff.periodMax,
+                  },
+                  {
+                    carrier: "Деловые Линии",
+                    name: bestDellinTariff.name,
+                    sum: bestDellinTariff.deliverySum,
+                    includesVat: true,
+                    min: bestDellinTariff.periodMin,
+                    max: bestDellinTariff.periodMax,
+                  },
+                ].map((item) => {
+                  const sumWithVat = item.includesVat
+                    ? item.sum
+                    : item.sum + item.sum * VAT_RATE;
+                  const total =
+                    sumWithVat * (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1);
+                  return (
+                    <tr key={item.carrier}>
+                      <td>{item.carrier}</td>
+                      <td>{item.name}</td>
+                      <td>{rub(item.sum)}</td>
+                      <td>
+                        <strong>{rub(total)}</strong>
+                      </td>
+                      <td>
+                        {item.min === item.max
+                          ? item.min || "—"
+                          : `${item.min}–${item.max}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="meta-line">
+            Для СДЭК итог считается как стоимость + НДС {Math.round(VAT_RATE * 100)}%.
+            Цена Деловых Линий уже включает НДС.
+          </p>
+        </div>
+      ) : null}
+
+      {activeDeliveryTab === "cdek" && (
+        <>
       <div className="card">
         <h2>Доставка СДЭК</h2>
         <div className="delivery-row">
@@ -866,7 +1446,11 @@ export default function Calculator() {
             <label>Режим доставки</label>
             <select
               value={mode}
-              onChange={(e) => setMode(e.target.value as DeliveryMode)}
+              onChange={(e) => {
+                setMode(e.target.value as DeliveryMode);
+                setQuote(null);
+                setQuoteError(null);
+              }}
             >
               {(
                 Object.entries(DELIVERY_MODE_LABELS) as [DeliveryMode, string][]
@@ -1040,6 +1624,256 @@ export default function Calculator() {
             </>
           )}
         </div>
+      )}
+        </>
+      )}
+
+      {activeDeliveryTab === "dellin" && (
+        <>
+          <div className="card">
+            <h2>Доставка Деловыми Линиями</h2>
+            <div className="delivery-row">
+              <DellinCityField
+                label="Откуда (город)"
+                value={dellinFromCity}
+                onSelect={selectDellinFromCity}
+              />
+              <DellinCityField
+                label="Куда (город)"
+                value={dellinToCity}
+                onSelect={selectDellinToCity}
+              />
+              <div className="field">
+                <label>Режим доставки</label>
+                <select
+                  value={dellinMode}
+                  onChange={(e) => {
+                    setDellinMode(e.target.value as DeliveryMode);
+                    setDellinQuote(null);
+                    setDellinQuoteError(null);
+                  }}
+                >
+                  {(
+                    Object.entries(DELIVERY_MODE_LABELS) as [
+                      DeliveryMode,
+                      string,
+                    ][]
+                  ).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Платит клиент</label>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={clientPays}
+                    onChange={(e) => setClientPays(e.target.checked)}
+                  />
+                  <span className="switch-slider" />
+                  <span className="switch-text">{clientPays ? "Да" : "Нет"}</span>
+                </label>
+              </div>
+            </div>
+            <div className="delivery-row">
+              {dellinMode.startsWith("door") ? (
+                <>
+                  <DellinStreetField
+                    label="Улица забора"
+                    city={dellinFromCity}
+                    value={dellinFromStreet}
+                    onSelect={setDellinFromStreet}
+                  />
+                  <div className="field dim-field">
+                    <label>Дом</label>
+                    <input
+                      type="text"
+                      value={dellinFromHouse}
+                      maxLength={7}
+                      placeholder="25"
+                      onChange={(e) => setDellinFromHouse(e.target.value)}
+                    />
+                  </div>
+                  <div className="field dim-field">
+                    <label>Квартира</label>
+                    <input
+                      type="text"
+                      value={dellinFromFlat}
+                      placeholder="12"
+                      onChange={(e) => setDellinFromFlat(e.target.value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <DellinTerminalField
+                  label="Терминал отправления"
+                  city={dellinFromCity}
+                  direction="derival"
+                  value={dellinFromTerminal}
+                  onSelect={setDellinFromTerminal}
+                  items={positions}
+                  manualPlaces={manualPlaces}
+                  enabled={totalPlacesAll > 0}
+                />
+              )}
+              {dellinMode.endsWith("door") ? (
+                <>
+                  <DellinStreetField
+                    label="Улица доставки"
+                    city={dellinToCity}
+                    value={dellinToStreet}
+                    onSelect={setDellinToStreet}
+                  />
+                  <div className="field dim-field">
+                    <label>Дом</label>
+                    <input
+                      type="text"
+                      value={dellinToHouse}
+                      maxLength={7}
+                      placeholder="25"
+                      onChange={(e) => setDellinToHouse(e.target.value)}
+                    />
+                  </div>
+                  <div className="field dim-field">
+                    <label>Квартира</label>
+                    <input
+                      type="text"
+                      value={dellinToFlat}
+                      placeholder="12"
+                      onChange={(e) => setDellinToFlat(e.target.value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <DellinTerminalField
+                  label="Терминал получения"
+                  city={dellinToCity}
+                  direction="arrival"
+                  value={dellinToTerminal}
+                  onSelect={setDellinToTerminal}
+                  items={positions}
+                  manualPlaces={manualPlaces}
+                  enabled={totalPlacesAll > 0}
+                />
+              )}
+            </div>
+            <p className="meta-line" style={{ marginTop: 0 }}>
+              Деловые Линии используют свой справочник городов и КЛАДР. Расчет
+              выполняется по тем же упаковочным местам, что и СДЭК.
+            </p>
+            <button
+              type="button"
+              className="button"
+              disabled={!canDellinCalc}
+              onClick={calcDellinDelivery}
+            >
+              {dellinQuoteLoading
+                ? "Расчёт..."
+                : "Рассчитать доставку Деловыми Линиями"}
+            </button>
+            {totalPlacesAll === 0 && (
+              <p className="meta-line">
+                Сначала добавьте товарные позиции или ручное место.
+              </p>
+            )}
+            {positions.length > 0 && packing && !packing.canShip && (
+              <p className="meta-line">
+                Расчет недоступен: исправьте ошибки упаковки выше.
+              </p>
+            )}
+          </div>
+
+          {(dellinQuote || dellinQuoteError) && (
+            <div className="card">
+              <h2>Результат Деловых Линий</h2>
+              {dellinQuoteError && (
+                <div className="error-message">{dellinQuoteError}</div>
+              )}
+              {(dellinQuote?.terminals?.derival ||
+                dellinQuote?.terminals?.arrival) && (
+                <div className="terminal-summary">
+                  {dellinQuote.terminals.derival && (
+                    <div className="terminal-line">
+                      <strong>Терминал отправления:</strong>{" "}
+                      {dellinQuote.terminals.derival.name}
+                      {dellinQuote.terminals.derival.address
+                        ? ` — ${dellinQuote.terminals.derival.address}`
+                        : ""}
+                    </div>
+                  )}
+                  {dellinQuote.terminals.arrival && (
+                    <div className="terminal-line">
+                      <strong>Терминал получения:</strong>{" "}
+                      {dellinQuote.terminals.arrival.name}
+                      {dellinQuote.terminals.arrival.address
+                        ? ` — ${dellinQuote.terminals.arrival.address}`
+                        : ""}
+                    </div>
+                  )}
+                </div>
+              )}
+              {dellinQuote?.warnings && dellinQuote.warnings.length > 0 && (
+                <ul className="warning-list">
+                  {dellinQuote.warnings.map((w, i) => (
+                    <li key={i}>⚠️ {w}</li>
+                  ))}
+                </ul>
+              )}
+              {dellinQuote?.tariffs && dellinQuote.tariffs.length > 0 && (
+                <>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Тариф</th>
+                          <th>Стоимость с НДС, ₽</th>
+                          <th>Итого к оплате, ₽</th>
+                          <th>Срок, дн.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dellinQuote.tariffs.map((t: DellinTariffDto) => {
+                          const total =
+                            t.deliverySum *
+                            (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1);
+                          return (
+                            <tr key={t.type}>
+                              <td>
+                                <strong>{t.name}</strong>
+                                {t.description && (
+                                  <div className="meta-line">{t.description}</div>
+                                )}
+                              </td>
+                              <td>{rub(t.deliverySum)}</td>
+                              <td>
+                                <strong>{rub(total)}</strong>
+                              </td>
+                              <td>
+                                {t.periodMin === t.periodMax
+                                  ? t.periodMin || "—"
+                                  : `${t.periodMin}–${t.periodMax}`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="meta-line">
+                    Цена Деловых Линий уже включает НДС
+                    {clientPays
+                      ? `, плюс ${Math.round(CLIENT_PAYS_MARKUP * 100)}% (платит клиент)`
+                      : ""}
+                    .
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </>
   );

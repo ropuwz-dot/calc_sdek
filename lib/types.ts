@@ -58,6 +58,21 @@ export interface CityDto {
   name: string;
 }
 
+export interface DellinCityDto {
+  code: string;
+  cityId: number;
+  name: string;
+  regionName: string;
+  isTerminal: boolean;
+}
+
+export interface DellinStreetDto {
+  code: string;
+  cityId: number;
+  name: string;
+  fullName: string;
+}
+
 export type DeliveryMode =
   | "warehouse-warehouse"
   | "warehouse-door"
@@ -97,6 +112,42 @@ export interface QuoteRequest {
 }
 
 // ---------- ПВЗ и их ограничения ----------
+
+export interface DellinTariffDto {
+  type: string;
+  name: string;
+  deliverySum: number;
+  periodMin: number;
+  periodMax: number;
+  description?: string;
+}
+
+export interface DellinTerminalDto {
+  id: number;
+  name: string;
+  address: string;
+  isDefault: boolean;
+}
+
+export interface DellinQuoteRequest {
+  items: PositionInput[];
+  fromCityCode: string;
+  toCityCode: string;
+  fromCityName: string;
+  toCityName: string;
+  mode: DeliveryMode;
+  fromAddress?: string;
+  toAddress?: string;
+  fromStreetCode?: string;
+  fromHouse?: string;
+  fromFlat?: string;
+  toStreetCode?: string;
+  toHouse?: string;
+  toFlat?: string;
+  fromTerminalId?: number;
+  toTerminalId?: number;
+  manualPlaces?: ManualPlaceInput[];
+}
 
 export interface PvzDims {
   a: number;
@@ -183,4 +234,16 @@ export interface QuoteResponse {
 export interface ApiError {
   ok: false;
   message: string;
+}
+
+export interface DellinQuoteResponse {
+  ok: boolean;
+  message?: string;
+  packing?: PackingDto;
+  tariffs?: DellinTariffDto[];
+  terminals?: {
+    derival?: DellinTerminalDto;
+    arrival?: DellinTerminalDto;
+  };
+  warnings?: string[];
 }

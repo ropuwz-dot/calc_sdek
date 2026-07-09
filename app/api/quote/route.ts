@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSheetsUser } from "@/lib/apiAuth";
 import { loadCatalog } from "@/lib/catalog";
+import { parseManualPlaces } from "@/lib/manualPlaces";
 import { packItems, placesToCdekPackages } from "@/lib/packing";
 import { calcTariffs, checkPvzLimits, checkSpecificPvz } from "@/lib/cdek";
 import type {
   DeliveryMode,
   PackingDto,
-  PlaceDto,
   QuoteRequest,
   QuoteResponse,
 } from "@/lib/types";
@@ -64,47 +64,14 @@ export async function POST(request: NextRequest) {
   const toPvzCode = String(body.toPvzCode ?? "").trim().slice(0, 40);
 
   // Ручные места: значения приходят от пользователя, но сервер их валидирует
-  const manualRaw = Array.isArray(body.manualPlaces) ? body.manualPlaces : [];
-  if (manualRaw.length > 100) {
+  const manualPlacesResult = parseManualPlaces(body.manualPlaces);
+  if (!manualPlacesResult.ok) {
     return NextResponse.json(
-      { ok: false, message: "Слишком много ручных мест." },
+      { ok: false, message: manualPlacesResult.message },
       { status: 400 }
     );
   }
-  const manualPlaces: PlaceDto[] = [];
-  for (const raw of manualRaw) {
-    const lengthCm = Number(raw?.lengthCm);
-    const widthCm = Number(raw?.widthCm);
-    const heightCm = Number(raw?.heightCm);
-    const weightKg = Number(raw?.weightKg);
-    const count = Number(raw?.count);
-    const dimsOk = [lengthCm, widthCm, heightCm].every(
-      (v) => Number.isFinite(v) && v > 0 && v <= 1000
-    );
-    const weightOk = Number.isFinite(weightKg) && weightKg > 0 && weightKg <= 10000;
-    const countOk = Number.isInteger(count) && count >= 1 && count <= 1000;
-    if (!dimsOk || !weightOk || !countOk) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message:
-            "Некорректное ручное место: габариты (до 1000 см), вес (до 10 000 кг) и количество мест должны быть положительными числами.",
-        },
-        { status: 400 }
-      );
-    }
-    manualPlaces.push({
-      article: "—",
-      label: "Ручное место",
-      unitsPerPlace: 1,
-      count,
-      lengthCm,
-      widthCm,
-      heightCm,
-      weightKg,
-      volumeM3: (lengthCm * widthCm * heightCm) / 1_000_000,
-    });
-  }
+  const manualPlaces = manualPlacesResult.places;
 
   // 6. Данные отправления/получения заполнены
   if (items.length === 0 && manualPlaces.length === 0) {

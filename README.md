@@ -88,6 +88,8 @@
 | `NEXTAUTH_URL` | Базовый URL приложения (`http://localhost:3000` локально) |
 | `CDEK_CLIENT_ID` / `CDEK_CLIENT_SECRET` | Учётка интеграции СДЭК |
 | `CDEK_API_URL` | Необязательно; по умолчанию боевой контур |
+| `DELLIN_APP_KEY` / `DELLIN_PAT` | Учётка API Деловых Линий (только сервер) |
+| `DELLIN_API_URL` | Необязательно; по умолчанию `https://api.dellin.ru` |
 
 Не используются (удалите, если остались): `GOOGLE_SERVICE_ACCOUNT_EMAIL`,
 `GOOGLE_PRIVATE_KEY`.

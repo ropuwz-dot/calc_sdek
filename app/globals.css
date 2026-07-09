@@ -272,6 +272,11 @@ a {
   min-width: 200px;
 }
 
+.delivery-row .dim-field {
+  flex: 0 0 110px;
+  min-width: 100px;
+}
+
 .qty-field {
   width: 90px;
 }
@@ -399,6 +404,28 @@ a {
   font-size: 14px;
 }
 
+.terminal-summary {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: #374151;
+  font-size: 14px;
+}
+
+.terminal-line {
+  background: #f6f8fb;
+  border: 1px solid #dde3ec;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.terminal-address {
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 6px 0 0;
+}
+
 .link-button {
   background: none;
   border: none;
@@ -417,6 +444,38 @@ a {
   align-items: center;
   margin-top: 14px;
   font-size: 15px;
+}
+
+.delivery-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: #eef1f5;
+  border: 1px solid #dde1e7;
+  border-radius: 8px;
+  padding: 4px;
+  margin: 0 0 16px;
+}
+
+.delivery-tabs button {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 7px 14px;
+}
+
+.delivery-tabs button.active {
+  background: #fff;
+  color: #1a5fd0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.delivery-tabs button:focus-visible {
+  outline: 2px solid #1a5fd0;
+  outline-offset: 2px;
 }
 
 .button:disabled {
