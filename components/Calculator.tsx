@@ -700,8 +700,19 @@ export default function Calculator() {
   // Доставка
   const [fromCity, setFromCityState] = useState<CityDto | null>(null);
   const [toCity, setToCityState] = useState<CityDto | null>(null);
-  const [fromAddress, setFromAddress] = useState("");
-  const [toAddress, setToAddress] = useState("");
+  // Адрес для сторон «дверь» у СДЭК: улица — свободный текст (у СДЭК нет
+  // справочника улиц в API), дом и квартира — отдельными полями, как у ДЛ
+  const [fromStreet, setFromStreet] = useState("");
+  const [fromHouse, setFromHouse] = useState("");
+  const [fromFlat, setFromFlat] = useState("");
+  const [toStreet, setToStreet] = useState("");
+  const [toHouse, setToHouse] = useState("");
+  const [toFlat, setToFlat] = useState("");
+
+  const composeAddress = (street: string, house: string, flat: string) => {
+    const base = [street.trim(), house.trim()].filter(Boolean).join(", ");
+    return flat.trim() ? `${base}, кв. ${flat.trim()}` : base;
+  };
   const [fromPvz, setFromPvz] = useState<PvzDto | null>(null);
   const [toPvz, setToPvz] = useState<PvzDto | null>(null);
   const [mode, setMode] = useState<DeliveryMode>("warehouse-warehouse");
@@ -946,8 +957,12 @@ export default function Calculator() {
           fromCode: fromCity.code,
           toCode: toCity.code,
           mode,
-          fromAddress: mode.startsWith("door") ? fromAddress : "",
-          toAddress: mode.endsWith("door") ? toAddress : "",
+          fromAddress: mode.startsWith("door")
+            ? composeAddress(fromStreet, fromHouse, fromFlat)
+            : "",
+          toAddress: mode.endsWith("door")
+            ? composeAddress(toStreet, toHouse, toFlat)
+            : "",
           fromPvzCode:
             mode.startsWith("warehouse") && fromPvz ? fromPvz.code : "",
           toPvzCode: mode.endsWith("warehouse") && toPvz ? toPvz.code : "",
@@ -1499,15 +1514,35 @@ export default function Calculator() {
         </div>
         <div className="delivery-row">
           {mode.startsWith("door") ? (
-            <div className="field grow">
-              <label>Адрес забора (улица, дом)</label>
-              <input
-                type="text"
-                value={fromAddress}
-                placeholder="Например: ул. Ленина, 10"
-                onChange={(e) => setFromAddress(e.target.value)}
-              />
-            </div>
+            <>
+              <div className="field grow">
+                <label>Улица забора</label>
+                <input
+                  type="text"
+                  value={fromStreet}
+                  placeholder="ул. Ленина"
+                  onChange={(e) => setFromStreet(e.target.value)}
+                />
+              </div>
+              <div className="field dim-field">
+                <label>Дом</label>
+                <input
+                  type="text"
+                  value={fromHouse}
+                  placeholder="10"
+                  onChange={(e) => setFromHouse(e.target.value)}
+                />
+              </div>
+              <div className="field dim-field">
+                <label>Квартира</label>
+                <input
+                  type="text"
+                  value={fromFlat}
+                  placeholder="12"
+                  onChange={(e) => setFromFlat(e.target.value)}
+                />
+              </div>
+            </>
           ) : fromCity ? (
             <PvzField
               label="ПВЗ отправления (улица или адрес)"
@@ -1528,15 +1563,35 @@ export default function Calculator() {
             </div>
           )}
           {mode.endsWith("door") ? (
-            <div className="field grow">
-              <label>Адрес доставки (улица, дом)</label>
-              <input
-                type="text"
-                value={toAddress}
-                placeholder="Например: пр. Мира, 25, кв. 4"
-                onChange={(e) => setToAddress(e.target.value)}
-              />
-            </div>
+            <>
+              <div className="field grow">
+                <label>Улица доставки</label>
+                <input
+                  type="text"
+                  value={toStreet}
+                  placeholder="пр. Мира"
+                  onChange={(e) => setToStreet(e.target.value)}
+                />
+              </div>
+              <div className="field dim-field">
+                <label>Дом</label>
+                <input
+                  type="text"
+                  value={toHouse}
+                  placeholder="25"
+                  onChange={(e) => setToHouse(e.target.value)}
+                />
+              </div>
+              <div className="field dim-field">
+                <label>Квартира</label>
+                <input
+                  type="text"
+                  value={toFlat}
+                  placeholder="4"
+                  onChange={(e) => setToFlat(e.target.value)}
+                />
+              </div>
+            </>
           ) : toCity ? (
             <PvzField
               label="ПВЗ получения (улица или адрес)"
