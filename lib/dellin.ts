@@ -483,12 +483,10 @@ export async function calcDellinTariffs(params: {
     deliveryTerm?: number;
     availableDeliveryTypes?: Record<string, number | null>;
     information?: string[];
-    orderDates?: {
-      giveoutFromOspReceiver?: string | null;
-      giveoutFromOspReceiverMax?: string | null;
-      derrivalToAddress?: string | null;
-      derivalToAddressMax?: string | null;
-    };
+    derival?: { price?: number };
+    intercity?: { price?: number };
+    arrival?: { price?: number };
+    orderDates?: DellinOrderDates;
   }>("/v2/calculator.json", {
     delivery: {
       deliveryType: { type: "auto" },
@@ -520,27 +518,62 @@ export async function calcDellinTariffs(params: {
   }
 
   const period = deliveryPeriod(result.data);
+
+  // availableDeliveryTypes — это стоимость ТОЛЬКО межтерминальной перевозки
+  // по каждому виду (совпадает с intercity.price для выбранного вида).
+  // Полная цена = межтерминальная + забор от адреса + доставка до адреса +
+  // допуслуги (страхование, информирование), которые лежат в data.price.
+  const fullPrice =
+    typeof result.data.price === "number" ? result.data.price : null;
+  const intercityPrice =
+    typeof result.data.intercity?.price === "number"
+      ? result.data.intercity.price
+      : null;
+  const derivalPrice = result.data.derival?.price ?? 0;
+  const arrivalPrice = result.data.arrival?.price ?? 0;
+  // Страхование/информирование и прочие сервисы, добавленные ДЛ в итог
+  const extrasPrice =
+    fullPrice !== null && intercityPrice !== null
+      ? Math.max(
+          0,
+          Math.round((fullPrice - intercityPrice - derivalPrice - arrivalPrice) * 100) / 100
+        )
+      : 0;
+
+  const totalFor = (typeIntercity: number): number => {
+    // Замещаем межтерминальную часть в полной цене на цену нужного вида
+    if (fullPrice !== null && intercityPrice !== null) {
+      return Math.round((fullPrice - intercityPrice + typeIntercity) * 100) / 100;
+    }
+    return Math.round((typeIntercity + derivalPrice + arrivalPrice) * 100) / 100;
+  };
+
+  const breakdown = (typeIntercity: number): string | undefined => {
+    const parts = [`перевозка ${typeIntercity} ₽`];
+    if (derivalPrice > 0) parts.push(`забор от адреса ${derivalPrice} ₽`);
+    if (arrivalPrice > 0) parts.push(`доставка до адреса ${arrivalPrice} ₽`);
+    if (extrasPrice > 0) parts.push(`страхование и сервисы ${extrasPrice} ₽`);
+    return parts.length > 1 ? parts.join(" + ") : undefined;
+  };
+
   const byType = result.data.availableDeliveryTypes ?? {};
   const tariffs = Object.entries(byType)
     .filter(([, price]) => typeof price === "number" && price > 0)
     .map<DellinTariffDto>(([type, price]) => ({
       type,
       name: DELIVERY_TYPE_LABELS[type] ?? type,
-      deliverySum: price as number,
+      deliverySum: totalFor(price as number),
       periodMin: period.min,
       periodMax: period.max,
-      description:
-        result.data.priceMinimal === type
-          ? "Минимальная стоимость по расчету Деловых Линий"
-          : undefined,
+      description: breakdown(price as number),
     }))
     .sort((a, b) => a.deliverySum - b.deliverySum);
 
-  if (tariffs.length === 0 && typeof result.data.price === "number") {
+  if (tariffs.length === 0 && fullPrice !== null) {
     tariffs.push({
       type: "auto",
       name: DELIVERY_TYPE_LABELS.auto,
-      deliverySum: result.data.price,
+      deliverySum: fullPrice,
       periodMin: period.min,
       periodMax: period.max,
       description: "Расчет Деловых Линий",
@@ -566,6 +599,19 @@ export async function calcDellinTariffs(params: {
   };
 }
 
+interface DellinOrderDates {
+  /** Выдача получателю с терминала (терминальная доставка) */
+  giveoutFromOspReceiver?: string | null;
+  giveoutFromOspReceiverMax?: string | null;
+  /** Доставка до адреса (встречается в части ответов) */
+  derrivalToAddress?: string | null;
+  derivalToAddressMax?: string | null;
+  /** Отвоз с терминала получателя на адрес (адресная доставка) */
+  derivalFromOspReceiver?: string | null;
+  /** Прибытие на терминал получателя */
+  arrivalToOspReceiver?: string | null;
+}
+
 /** Календарных дней от сегодня до даты (не меньше 0) */
 function daysFromToday(date: Date): number {
   const today = new Date();
@@ -585,12 +631,7 @@ function daysFromToday(date: Date): number {
  */
 function deliveryPeriod(data: {
   deliveryTerm?: number;
-  orderDates?: {
-    giveoutFromOspReceiver?: string | null;
-    giveoutFromOspReceiverMax?: string | null;
-    derrivalToAddress?: string | null;
-    derivalToAddressMax?: string | null;
-  };
+  orderDates?: DellinOrderDates;
 }): { min: number; max: number } {
   if (typeof data.deliveryTerm === "number" && data.deliveryTerm > 0) {
     return { min: data.deliveryTerm, max: data.deliveryTerm };
@@ -599,6 +640,8 @@ function deliveryPeriod(data: {
   const minDate = firstDate([
     data.orderDates?.giveoutFromOspReceiver,
     data.orderDates?.derrivalToAddress,
+    data.orderDates?.derivalFromOspReceiver,
+    data.orderDates?.arrivalToOspReceiver,
   ]);
   if (!minDate) return { min: 0, max: 0 };
 
