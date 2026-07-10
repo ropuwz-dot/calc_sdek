@@ -486,6 +486,10 @@ export async function calcDellinTariffs(params: {
     derival?: { price?: number };
     intercity?: { price?: number };
     arrival?: { price?: number };
+    insuranceComponents?: {
+      cargoInsurance?: number;
+      termInsurance?: number;
+    };
     orderDates?: DellinOrderDates;
   }>("/v2/calculator.json", {
     delivery: {
@@ -511,6 +515,9 @@ export async function calcDellinTariffs(params: {
         terminalId: arrivalTerminal.terminal?.id,
       }),
     },
+    // Примечание: cargo.insurance.statedValue калькулятор ДЛ игнорирует
+    // (проверено эмпирически) — страхование груза и срока он считает сам
+    // и включает в price; мы показываем его в расшифровке.
     cargo,
   });
   if (!result.ok) {
@@ -548,11 +555,20 @@ export async function calcDellinTariffs(params: {
     return Math.round((typeIntercity + derivalPrice + arrivalPrice) * 100) / 100;
   };
 
+  const cargoInsurance = result.data.insuranceComponents?.cargoInsurance ?? 0;
+  const termInsurance = result.data.insuranceComponents?.termInsurance ?? 0;
+  const servicesPrice = Math.max(
+    0,
+    Math.round((extrasPrice - cargoInsurance - termInsurance) * 100) / 100
+  );
+
   const breakdown = (typeIntercity: number): string | undefined => {
     const parts = [`перевозка ${typeIntercity} ₽`];
     if (derivalPrice > 0) parts.push(`забор от адреса ${derivalPrice} ₽`);
     if (arrivalPrice > 0) parts.push(`доставка до адреса ${arrivalPrice} ₽`);
-    if (extrasPrice > 0) parts.push(`страхование и сервисы ${extrasPrice} ₽`);
+    if (cargoInsurance > 0) parts.push(`страхование груза ${cargoInsurance} ₽`);
+    if (termInsurance > 0) parts.push(`страхование срока ${termInsurance} ₽`);
+    if (servicesPrice > 0) parts.push(`сервисы ${servicesPrice} ₽`);
     return parts.length > 1 ? parts.join(" + ") : undefined;
   };
 

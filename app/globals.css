@@ -120,6 +120,15 @@ th {
   font-weight: 600;
 }
 
+/* Ячейка с переносом строк — для названий тарифов с расшифровкой */
+td.cell-wrap {
+  white-space: normal;
+  max-width: 420px;
+  min-width: 240px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 td.row-number,
 th.row-number {
   background: #f0f2f5;

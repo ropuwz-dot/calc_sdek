@@ -1748,7 +1748,7 @@ export default function Calculator() {
                         (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1);
                       return (
                         <tr key={t.code}>
-                          <td>
+                          <td className="cell-wrap">
                             <strong>{t.name}</strong>
                             {t.description && (
                               <div className="meta-line">{t.description}</div>
@@ -1918,7 +1918,10 @@ export default function Calculator() {
             </div>
             <p className="meta-line" style={{ marginTop: 0 }}>
               Деловые Линии используют свой справочник городов и КЛАДР. Расчет
-              выполняется по тем же упаковочным местам, что и СДЭК.
+              выполняется по тем же упаковочным местам, что и СДЭК. Страхование
+              груза и срока ДЛ считают автоматически — оно видно в расшифровке
+              тарифа. Допуслуги при оформлении (подъём на этаж и т.п.) в расчёт
+              не входят.
             </p>
             <button
               type="button"
@@ -1997,7 +2000,7 @@ export default function Calculator() {
                             (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1);
                           return (
                             <tr key={t.type}>
-                              <td>
+                              <td className="cell-wrap">
                                 <strong>{t.name}</strong>
                                 {t.description && (
                                   <div className="meta-line">{t.description}</div>
