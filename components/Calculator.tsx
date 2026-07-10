@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CityDto,
   DeliveryMode,
@@ -115,11 +115,11 @@ function StreetField({
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState(false);
   const debounced = useDebounced(value, 300);
+  const activeOptions =
+    !cityName || picked || debounced.trim().length < 2 ? [] : options;
 
   useEffect(() => {
     if (!cityName || picked || debounced.trim().length < 2) {
-      setOptions([]);
-      setOpen(false);
       return;
     }
     let cancelled = false;
@@ -151,12 +151,12 @@ function StreetField({
             onChange(e.target.value);
             setPicked(false);
           }}
-          onFocus={() => options.length > 0 && setOpen(true)}
+          onFocus={() => activeOptions.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 200)}
         />
-        {open && options.length > 0 && (
+        {open && activeOptions.length > 0 && (
           <ul className="suggest-list">
-            {options.map((street) => (
+            {activeOptions.map((street) => (
               <li key={street}>
                 <button
                   type="button"
@@ -193,10 +193,10 @@ function CityField({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debouncedQuery = useDebounced(query, 300);
+  const activeOptions = value || debouncedQuery.trim().length < 2 ? [] : options;
 
   useEffect(() => {
     if (value || debouncedQuery.trim().length < 2) {
-      setOptions([]);
       return;
     }
     let cancelled = false;
@@ -242,12 +242,12 @@ function CityField({
             value={query}
             placeholder="Начните вводить город…"
             onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => options.length > 0 && setOpen(true)}
+            onFocus={() => activeOptions.length > 0 && setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 200)}
           />
-          {open && options.length > 0 && (
+          {open && activeOptions.length > 0 && (
             <ul className="suggest-list">
-              {options.map((city) => (
+              {activeOptions.map((city) => (
                 <li key={city.code}>
                   <button
                     type="button"
@@ -285,10 +285,10 @@ function DellinCityField({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debouncedQuery = useDebounced(query, 300);
+  const activeOptions = value || debouncedQuery.trim().length < 2 ? [] : options;
 
   useEffect(() => {
     if (value || debouncedQuery.trim().length < 2) {
-      setOptions([]);
       return;
     }
     let cancelled = false;
@@ -337,12 +337,12 @@ function DellinCityField({
             value={query}
             placeholder="Начните вводить город..."
             onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => options.length > 0 && setOpen(true)}
+            onFocus={() => activeOptions.length > 0 && setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 200)}
           />
-          {open && options.length > 0 && (
+          {open && activeOptions.length > 0 && (
             <ul className="suggest-list">
-              {options.map((city) => (
+              {activeOptions.map((city) => (
                 <li key={`${city.code}-${city.cityId}`}>
                   <button
                     type="button"
@@ -384,19 +384,11 @@ function DellinStreetField({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debouncedQuery = useDebounced(query, 300);
-
-  useEffect(() => {
-    setQuery("");
-    setOptions([]);
-    setOpen(false);
-    setError(null);
-    onSelect(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city?.cityId]);
+  const activeOptions =
+    !city || value || debouncedQuery.trim().length < 2 ? [] : options;
 
   useEffect(() => {
     if (!city || value || debouncedQuery.trim().length < 2) {
-      setOptions([]);
       return;
     }
     let cancelled = false;
@@ -445,12 +437,12 @@ function DellinStreetField({
             disabled={!city}
             placeholder={city ? "Начните вводить улицу..." : "Сначала выберите город"}
             onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => options.length > 0 && setOpen(true)}
+            onFocus={() => activeOptions.length > 0 && setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 200)}
           />
-          {open && options.length > 0 && (
+          {open && activeOptions.length > 0 && (
             <ul className="suggest-list">
-              {options.map((street) => (
+              {activeOptions.map((street) => (
                 <li key={street.code}>
                   <button
                     type="button"
@@ -497,40 +489,54 @@ function DellinTerminalField({
 
   // Дебаунс по составу мест: изменение позиций не должно дёргать
   // подбор терминалов (каталог + API ДЛ) на каждый клик.
-  const placesKey = useDebounced(
-    JSON.stringify([
-      items.map((p) => [p.article, p.qty]),
-      manualPlaces.map(({ id, ...place }) => {
+  const placesPayload = useMemo(
+    () => ({
+      items: items.map(({ article, qty }) => ({ article, qty })),
+      manualPlaces: manualPlaces.map(({ id, ...place }) => {
         void id;
         return place;
       }),
-    ]),
-    600
+    }),
+    [items, manualPlaces]
   );
+  const placesKey = useDebounced(JSON.stringify(placesPayload), 600);
   const itemsRef = useRef(items);
-  itemsRef.current = items;
   const manualRef = useRef(manualPlaces);
-  manualRef.current = manualPlaces;
 
   useEffect(() => {
-    onSelect(null);
-    setTerminals([]);
-    setError(null);
+    itemsRef.current = items;
+    manualRef.current = manualPlaces;
+  }, [items, manualPlaces]);
+
+  useEffect(() => {
     if (!city || !enabled) return;
 
     let cancelled = false;
-    setLoading(true);
-    apiPost<{ terminals: DellinTerminalDto[] }>("/api/dellin/terminals", {
-      cityCode: city.code,
-      direction,
-      items: itemsRef.current.map(({ article, qty }) => ({ article, qty })),
-      manualPlaces: manualRef.current.map(({ id, ...place }) => {
-        void id;
-        return place;
-      }),
-    })
+    Promise.resolve()
+      .then(() => {
+        if (cancelled) return null;
+        onSelect(null);
+        setTerminals([]);
+        setError(null);
+        setLoading(true);
+        return apiPost<{ terminals: DellinTerminalDto[] }>(
+          "/api/dellin/terminals",
+          {
+            cityCode: city.code,
+            direction,
+            items: itemsRef.current.map(({ article, qty }) => ({
+              article,
+              qty,
+            })),
+            manualPlaces: manualRef.current.map(({ id, ...place }) => {
+              void id;
+              return place;
+            }),
+          }
+        );
+      })
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled || !data) return;
         setTerminals(data.terminals);
         onSelect(
           data.terminals.find((terminal) => terminal.isDefault) ??
@@ -844,11 +850,13 @@ export default function Calculator() {
   // Смена города/режима ДЛ сбрасывает устаревший результат расчёта
   const selectDellinFromCity = (city: DellinCityDto | null) => {
     setDellinFromCity(city);
+    setDellinFromStreet(null);
     setDellinQuote(null);
     setDellinQuoteError(null);
   };
   const selectDellinToCity = (city: DellinCityDto | null) => {
     setDellinToCity(city);
+    setDellinToStreet(null);
     setDellinQuote(null);
     setDellinQuoteError(null);
   };
@@ -856,9 +864,11 @@ export default function Calculator() {
   const packRequestId = useRef(0);
 
   // Автокомплит товара
+  const activeSuggestions =
+    selected || debouncedSearch.trim().length < 2 ? [] : suggestions;
+
   useEffect(() => {
     if (selected || debouncedSearch.trim().length < 2) {
-      setSuggestions([]);
       return;
     }
     let cancelled = false;
@@ -1200,11 +1210,13 @@ export default function Calculator() {
                   value={searchQ}
                   placeholder="Например: DON. или часть названия…"
                   onChange={(e) => setSearchQ(e.target.value)}
-                  onFocus={() => suggestions.length > 0 && setSuggestOpen(true)}
+                  onFocus={() =>
+                    activeSuggestions.length > 0 && setSuggestOpen(true)
+                  }
                 />
-                {suggestOpen && suggestions.length > 0 && (
+                {suggestOpen && activeSuggestions.length > 0 && (
                   <ul className="suggest-list">
-                    {suggestions.map((p) => (
+                    {activeSuggestions.map((p) => (
                       <li key={p.article}>
                         <button
                           type="button"
@@ -1838,6 +1850,7 @@ export default function Calculator() {
               {dellinMode.startsWith("door") ? (
                 <>
                   <DellinStreetField
+                    key={`from-${dellinFromCity?.cityId ?? "none"}`}
                     label="Улица забора"
                     city={dellinFromCity}
                     value={dellinFromStreet}
@@ -1878,6 +1891,7 @@ export default function Calculator() {
               {dellinMode.endsWith("door") ? (
                 <>
                   <DellinStreetField
+                    key={`to-${dellinToCity?.cityId ?? "none"}`}
                     label="Улица доставки"
                     city={dellinToCity}
                     value={dellinToStreet}
