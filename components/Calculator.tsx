@@ -20,6 +20,20 @@ import type {
   TariffDto,
 } from "@/lib/types";
 import { DELIVERY_MODE_LABELS, pvzFitProblem } from "@/lib/types";
+import {
+  loadRecentDirections,
+  recentDirectionKey,
+  rememberDirection,
+  saveRecentDirections,
+  toggleDirectionPinned,
+  type RecentDirection,
+  type RecentDirectionsState,
+} from "@/lib/recents";
+import {
+  decodeSharePayload,
+  encodeSharePayload,
+  type ShareLinkPayload,
+} from "@/lib/shareLink";
 
 /**
  * Клиент калькулятора. Работает только с собственным API приложения;
@@ -473,6 +487,7 @@ function DellinTerminalField({
   items,
   manualPlaces,
   enabled,
+  restoredTerminalId,
 }: {
   label: string;
   city: DellinCityDto | null;
@@ -482,6 +497,7 @@ function DellinTerminalField({
   items: Position[];
   manualPlaces: ManualPlace[];
   enabled: boolean;
+  restoredTerminalId?: number | null;
 }) {
   const [terminals, setTerminals] = useState<DellinTerminalDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -502,6 +518,12 @@ function DellinTerminalField({
   const placesKey = useDebounced(JSON.stringify(placesPayload), 600);
   const itemsRef = useRef(items);
   const manualRef = useRef(manualPlaces);
+  const restoredTerminalIdRef = useRef(restoredTerminalId ?? null);
+  const restoredCityCodeRef = useRef(
+    restoredTerminalId !== null && restoredTerminalId !== undefined
+      ? (city?.code ?? null)
+      : null
+  );
 
   useEffect(() => {
     itemsRef.current = items;
@@ -512,10 +534,22 @@ function DellinTerminalField({
     if (!city || !enabled) return;
 
     let cancelled = false;
+    const canUseRestoredTerminal =
+      restoredTerminalIdRef.current !== null &&
+      restoredCityCodeRef.current === city.code;
+
+    if (
+      restoredTerminalIdRef.current !== null &&
+      restoredCityCodeRef.current !== city.code
+    ) {
+      restoredTerminalIdRef.current = null;
+      restoredCityCodeRef.current = null;
+    }
+
     Promise.resolve()
       .then(() => {
         if (cancelled) return null;
-        onSelect(null);
+        if (!canUseRestoredTerminal) onSelect(null);
         setTerminals([]);
         setError(null);
         setLoading(true);
@@ -538,11 +572,21 @@ function DellinTerminalField({
       .then((data) => {
         if (cancelled || !data) return;
         setTerminals(data.terminals);
+        const restoredTerminal = canUseRestoredTerminal
+          ? data.terminals.find(
+              (terminal) => terminal.id === restoredTerminalIdRef.current
+            )
+          : null;
         onSelect(
-          data.terminals.find((terminal) => terminal.isDefault) ??
+          restoredTerminal ??
+            data.terminals.find((terminal) => terminal.isDefault) ??
             data.terminals[0] ??
             null
         );
+        if (canUseRestoredTerminal) {
+          restoredTerminalIdRef.current = null;
+          restoredCityCodeRef.current = null;
+        }
         setError(null);
       })
       .catch((e: Error) => {
@@ -754,9 +798,91 @@ function PvzField({
   );
 }
 
+function DirectionRecents<TCity>({
+  carrier,
+  items,
+  onApply,
+  onTogglePinned,
+  formatCity,
+}: {
+  carrier: DeliveryTab;
+  items: RecentDirection<TCity>[];
+  onApply: (direction: RecentDirection<TCity>) => void;
+  onTogglePinned: (key: string) => void;
+  formatCity: (city: TCity) => string;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="chip-list" aria-label="Недавние направления">
+      {items.map((direction) => {
+        const key = recentDirectionKey(carrier, direction);
+        return (
+          <span
+            key={key}
+            className="chip"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+          >
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => onTogglePinned(key)}
+              title={
+                direction.pinned
+                  ? "Открепить направление"
+                  : "Закрепить направление"
+              }
+              aria-label={
+                direction.pinned
+                  ? "Открепить направление"
+                  : "Закрепить направление"
+              }
+              style={{
+                color: direction.pinned ? "#b7791f" : "#8a919d",
+                fontSize: 15,
+                lineHeight: 1,
+                textDecoration: "none",
+              }}
+            >
+              {direction.pinned ? "★" : "☆"}
+            </button>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => onApply(direction)}
+              title="Применить направление"
+              style={{ color: "#1c1e21", textDecoration: "none" }}
+            >
+              {formatCity(direction.from)} → {formatCity(direction.to)}
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------- Основной компонент ----------
 
 export default function Calculator() {
+  const [shareRestore] = useState(() => {
+    if (typeof window === "undefined") {
+      return { payload: null, invalid: false };
+    }
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("c")) {
+      return { payload: null, invalid: false };
+    }
+    const payload = decodeSharePayload(url.searchParams.get("c"));
+    return { payload, invalid: payload === null };
+  });
+  const initialManualPlaces = (shareRestore.payload?.manualPlaces ?? []).map(
+    (place, index) => ({
+      ...place,
+      id: index + 1,
+    })
+  );
+
   // Поиск товара
   const [searchQ, setSearchQ] = useState("");
   const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
@@ -775,7 +901,7 @@ export default function Calculator() {
   // Ручные места (без номенклатуры)
   const [manualPlaces, setManualPlaces] = useState<
     ManualPlace[]
-  >([]);
+  >(initialManualPlaces);
   const [manualForm, setManualForm] = useState({
     lengthCm: "",
     widthCm: "",
@@ -783,30 +909,63 @@ export default function Calculator() {
     weightKg: "",
     count: "1",
   });
-  const manualIdRef = useRef(0);
+  const manualIdRef = useRef(initialManualPlaces.length);
 
   // Доставка
-  const [fromCity, setFromCityState] = useState<CityDto | null>(null);
-  const [toCity, setToCityState] = useState<CityDto | null>(null);
+  const [fromCity, setFromCityState] = useState<CityDto | null>(
+    shareRestore.payload?.cdek.cities.from ?? null
+  );
+  const [toCity, setToCityState] = useState<CityDto | null>(
+    shareRestore.payload?.cdek.cities.to ?? null
+  );
   // Адрес для сторон «дверь» у СДЭК: улица — свободный текст (у СДЭК нет
   // справочника улиц в API), дом и квартира — отдельными полями, как у ДЛ
-  const [fromStreet, setFromStreet] = useState("");
-  const [fromHouse, setFromHouse] = useState("");
-  const [fromFlat, setFromFlat] = useState("");
-  const [toStreet, setToStreet] = useState("");
-  const [toHouse, setToHouse] = useState("");
-  const [toFlat, setToFlat] = useState("");
+  const [fromStreet, setFromStreet] = useState(
+    shareRestore.payload?.cdek.address.fromStreet ?? ""
+  );
+  const [fromHouse, setFromHouse] = useState(
+    shareRestore.payload?.cdek.address.fromHouse ?? ""
+  );
+  const [fromFlat, setFromFlat] = useState(
+    shareRestore.payload?.cdek.address.fromFlat ?? ""
+  );
+  const [toStreet, setToStreet] = useState(
+    shareRestore.payload?.cdek.address.toStreet ?? ""
+  );
+  const [toHouse, setToHouse] = useState(
+    shareRestore.payload?.cdek.address.toHouse ?? ""
+  );
+  const [toFlat, setToFlat] = useState(
+    shareRestore.payload?.cdek.address.toFlat ?? ""
+  );
 
   const composeAddress = (street: string, house: string, flat: string) => {
     const base = [street.trim(), house.trim()].filter(Boolean).join(", ");
     return flat.trim() ? `${base}, кв. ${flat.trim()}` : base;
   };
-  const [fromPvz, setFromPvz] = useState<PvzDto | null>(null);
-  const [toPvz, setToPvz] = useState<PvzDto | null>(null);
-  const [mode, setMode] = useState<DeliveryMode>("warehouse-warehouse");
-  const [clientPays, setClientPays] = useState(false);
+  const [fromPvz, setFromPvz] = useState<PvzDto | null>(
+    shareRestore.payload?.cdek.pvz.from ?? null
+  );
+  const [toPvz, setToPvz] = useState<PvzDto | null>(
+    shareRestore.payload?.cdek.pvz.to ?? null
+  );
+  const [mode, setMode] = useState<DeliveryMode>(
+    shareRestore.payload?.cdek.mode ?? "warehouse-warehouse"
+  );
+  const [clientPays, setClientPays] = useState(
+    shareRestore.payload?.clientPays ?? false
+  );
   const [activeDeliveryTab, setActiveDeliveryTab] =
-    useState<DeliveryTab>("cdek");
+    useState<DeliveryTab>(shareRestore.payload?.tab ?? "cdek");
+  const [recentDirections, setRecentDirections] =
+    useState<RecentDirectionsState>(() => loadRecentDirections());
+  const [copyLinkStatus, setCopyLinkStatus] = useState<string | null>(null);
+  const restoreHandled = useRef(false);
+
+  const updateRecentDirections = (next: RecentDirectionsState) => {
+    setRecentDirections(next);
+    saveRecentDirections(next);
+  };
 
   // Смена города сбрасывает выбранный в нём ПВЗ и устаревший результат расчёта
   const setFromCity = (city: CityDto | null) => {
@@ -826,22 +985,44 @@ export default function Calculator() {
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
   const [dellinFromCity, setDellinFromCity] =
-    useState<DellinCityDto | null>(null);
-  const [dellinToCity, setDellinToCity] = useState<DellinCityDto | null>(null);
+    useState<DellinCityDto | null>(
+      shareRestore.payload?.dellin.cities.from ?? null
+    );
+  const [dellinToCity, setDellinToCity] = useState<DellinCityDto | null>(
+    shareRestore.payload?.dellin.cities.to ?? null
+  );
   const [dellinFromStreet, setDellinFromStreet] =
-    useState<DellinStreetDto | null>(null);
+    useState<DellinStreetDto | null>(
+      shareRestore.payload?.dellin.street.from ?? null
+    );
   const [dellinToStreet, setDellinToStreet] =
-    useState<DellinStreetDto | null>(null);
+    useState<DellinStreetDto | null>(
+      shareRestore.payload?.dellin.street.to ?? null
+    );
   const [dellinFromTerminal, setDellinFromTerminal] =
-    useState<DellinTerminalDto | null>(null);
+    useState<DellinTerminalDto | null>(
+      shareRestore.payload?.dellin.terminal.from ?? null
+    );
   const [dellinToTerminal, setDellinToTerminal] =
-    useState<DellinTerminalDto | null>(null);
-  const [dellinFromHouse, setDellinFromHouse] = useState("");
-  const [dellinToHouse, setDellinToHouse] = useState("");
-  const [dellinFromFlat, setDellinFromFlat] = useState("");
-  const [dellinToFlat, setDellinToFlat] = useState("");
+    useState<DellinTerminalDto | null>(
+      shareRestore.payload?.dellin.terminal.to ?? null
+    );
+  const [dellinFromHouse, setDellinFromHouse] = useState(
+    shareRestore.payload?.dellin.house.from ?? ""
+  );
+  const [dellinToHouse, setDellinToHouse] = useState(
+    shareRestore.payload?.dellin.house.to ?? ""
+  );
+  const [dellinFromFlat, setDellinFromFlat] = useState(
+    shareRestore.payload?.dellin.flat.from ?? ""
+  );
+  const [dellinToFlat, setDellinToFlat] = useState(
+    shareRestore.payload?.dellin.flat.to ?? ""
+  );
   const [dellinMode, setDellinMode] =
-    useState<DeliveryMode>("warehouse-warehouse");
+    useState<DeliveryMode>(
+      shareRestore.payload?.dellin.mode ?? "warehouse-warehouse"
+    );
   const [dellinQuote, setDellinQuote] =
     useState<DellinQuoteResponse | null>(null);
   const [dellinQuoteLoading, setDellinQuoteLoading] = useState(false);
@@ -859,6 +1040,43 @@ export default function Calculator() {
     setDellinToStreet(null);
     setDellinQuote(null);
     setDellinQuoteError(null);
+  };
+
+  const applyCdekDirection = (direction: RecentDirection<CityDto>) => {
+    setFromCity(direction.from);
+    setToCity(direction.to);
+  };
+
+  const applyDellinDirection = (
+    direction: RecentDirection<DellinCityDto>
+  ) => {
+    selectDellinFromCity(direction.from);
+    selectDellinToCity(direction.to);
+  };
+
+  const toggleRecentPinned = (carrier: DeliveryTab, key: string) => {
+    updateRecentDirections(
+      toggleDirectionPinned(recentDirections, carrier, key)
+    );
+  };
+
+  const rememberCdekDirection = () => {
+    if (!fromCity || !toCity) return;
+    updateRecentDirections(
+      rememberDirection(recentDirections, "cdek", fromCity, toCity)
+    );
+  };
+
+  const rememberDellinDirection = () => {
+    if (!dellinFromCity || !dellinToCity) return;
+    updateRecentDirections(
+      rememberDirection(
+        recentDirections,
+        "dellin",
+        dellinFromCity,
+        dellinToCity
+      )
+    );
   };
 
   const packRequestId = useRef(0);
@@ -937,6 +1155,30 @@ export default function Calculator() {
     setDellinQuoteError(null);
     void recalcPacking(next);
   };
+
+  const resolveSharedPositions = useCallback(
+    async (items: PositionInput[]): Promise<Position[]> =>
+      Promise.all(
+        items.map(async (item) => {
+          try {
+            const data = await apiGet<{ products: ProductSuggestion[] }>(
+              `/api/products/search?q=${encodeURIComponent(item.article)}`
+            );
+            const product = data.products.find(
+              (candidate) => candidate.article === item.article
+            );
+            return {
+              article: item.article,
+              qty: item.qty,
+              name: product?.name ?? item.article,
+            };
+          } catch {
+            return { article: item.article, qty: item.qty, name: item.article };
+          }
+        })
+      ),
+    []
+  );
 
   const addPosition = () => {
     if (!selected) return;
@@ -1030,6 +1272,127 @@ export default function Calculator() {
   const catalogOk = positions.length === 0 || packing?.canShip === true;
   const canShipAll = totalPlacesAll > 0 && catalogOk;
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (shareRestore.invalid) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("c");
+      window.history.replaceState(
+        null,
+        "",
+        `${url.pathname}${url.search}${url.hash}`
+      );
+      return;
+    }
+
+    if (restoreHandled.current || !shareRestore.payload) return;
+    restoreHandled.current = true;
+
+    let cancelled = false;
+    resolveSharedPositions(shareRestore.payload.positions).then((restoredPositions) => {
+      if (cancelled) return;
+      setPositions(restoredPositions);
+      setQuote(null);
+      setQuoteError(null);
+      setDellinQuote(null);
+      setDellinQuoteError(null);
+      void recalcPacking(restoredPositions);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    recalcPacking,
+    resolveSharedPositions,
+    shareRestore.invalid,
+    shareRestore.payload,
+  ]);
+
+  const buildSharePayload = (): ShareLinkPayload => ({
+    v: 1,
+    tab: activeDeliveryTab,
+    cdek: {
+      cities: {
+        from: fromCity,
+        to: toCity,
+      },
+      mode,
+      address: {
+        fromStreet,
+        fromHouse,
+        fromFlat,
+        toStreet,
+        toHouse,
+        toFlat,
+      },
+      pvz: {
+        from: fromPvz,
+        to: toPvz,
+      },
+    },
+    dellin: {
+      cities: {
+        from: dellinFromCity,
+        to: dellinToCity,
+      },
+      street: {
+        from: dellinFromStreet,
+        to: dellinToStreet,
+      },
+      terminal: {
+        from: dellinFromTerminal,
+        to: dellinToTerminal,
+      },
+      house: {
+        from: dellinFromHouse,
+        to: dellinToHouse,
+      },
+      flat: {
+        from: dellinFromFlat,
+        to: dellinToFlat,
+      },
+      mode: dellinMode,
+    },
+    positions: positions.map(({ article, qty }) => ({ article, qty })),
+    manualPlaces: manualPlaces.map(({ id, ...place }) => {
+      void id;
+      return place;
+    }),
+    clientPays,
+  });
+
+  const activeDirectionFilled =
+    activeDeliveryTab === "cdek"
+      ? fromCity !== null && toCity !== null
+      : dellinFromCity !== null && dellinToCity !== null;
+
+  const copyShareLink = async () => {
+    if (!activeDirectionFilled || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("c", encodeSharePayload(buildSharePayload()));
+    const link = url.toString();
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = link;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopyLinkStatus("Ссылка скопирована");
+    } catch {
+      setCopyLinkStatus("Не удалось скопировать ссылку");
+    }
+  };
+
   // Расчёт СДЭК
   const calcDelivery = async () => {
     if (!fromCity || !toCity || totalPlacesAll === 0) return;
@@ -1067,6 +1430,7 @@ export default function Calculator() {
         if (data.tariffs) setQuote(data);
       } else {
         setQuote(data);
+        rememberCdekDirection();
       }
     } catch (e) {
       setQuoteError(
@@ -1143,6 +1507,7 @@ export default function Calculator() {
         if (data.tariffs) setDellinQuote(data);
       } else {
         setDellinQuote(data);
+        rememberDellinDirection();
       }
     } catch (e) {
       setDellinQuoteError(
@@ -1606,6 +1971,13 @@ export default function Calculator() {
             </label>
           </div>
         </div>
+        <DirectionRecents
+          carrier="cdek"
+          items={recentDirections.cdek}
+          onApply={applyCdekDirection}
+          onTogglePinned={(key) => toggleRecentPinned("cdek", key)}
+          formatCity={(city) => city.name}
+        />
         <div className="delivery-row">
           {mode.startsWith("door") ? (
             <>
@@ -1707,14 +2079,27 @@ export default function Calculator() {
           конкретного ПВЗ на цену не влияет, но позволяет проверить его
           ограничения по весу и габаритам.
         </p>
-        <button
-          type="button"
-          className="button"
-          disabled={!canCalc}
-          onClick={calcDelivery}
-        >
-          {quoteLoading ? "Расчёт…" : "Рассчитать доставку СДЭК"}
-        </button>
+        <div className="add-row">
+          <button
+            type="button"
+            className="button"
+            disabled={!canCalc}
+            onClick={calcDelivery}
+          >
+            {quoteLoading ? "Расчёт…" : "Рассчитать доставку СДЭК"}
+          </button>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={!activeDirectionFilled}
+            onClick={copyShareLink}
+          >
+            Скопировать ссылку
+          </button>
+        </div>
+        {copyLinkStatus && activeDeliveryTab === "cdek" && (
+          <p className="meta-line">{copyLinkStatus}</p>
+        )}
         {totalPlacesAll === 0 && (
           <p className="meta-line">
             Сначала добавьте товарные позиции или ручное место.
@@ -1846,6 +2231,15 @@ export default function Calculator() {
                 </label>
               </div>
             </div>
+            <DirectionRecents
+              carrier="dellin"
+              items={recentDirections.dellin}
+              onApply={applyDellinDirection}
+              onTogglePinned={(key) => toggleRecentPinned("dellin", key)}
+              formatCity={(city) =>
+                [city.name, city.regionName].filter(Boolean).join(", ")
+              }
+            />
             <div className="delivery-row">
               {dellinMode.startsWith("door") ? (
                 <>
@@ -1886,6 +2280,9 @@ export default function Calculator() {
                   items={positions}
                   manualPlaces={manualPlaces}
                   enabled={totalPlacesAll > 0}
+                  restoredTerminalId={
+                    shareRestore.payload?.dellin.terminal.from?.id ?? null
+                  }
                 />
               )}
               {dellinMode.endsWith("door") ? (
@@ -1927,6 +2324,9 @@ export default function Calculator() {
                   items={positions}
                   manualPlaces={manualPlaces}
                   enabled={totalPlacesAll > 0}
+                  restoredTerminalId={
+                    shareRestore.payload?.dellin.terminal.to?.id ?? null
+                  }
                 />
               )}
             </div>
@@ -1937,16 +2337,29 @@ export default function Calculator() {
               тарифа. Допуслуги при оформлении (подъём на этаж и т.п.) в расчёт
               не входят.
             </p>
-            <button
-              type="button"
-              className="button"
-              disabled={!canDellinCalc}
-              onClick={calcDellinDelivery}
-            >
-              {dellinQuoteLoading
-                ? "Расчёт..."
-                : "Рассчитать доставку Деловыми Линиями"}
-            </button>
+            <div className="add-row">
+              <button
+                type="button"
+                className="button"
+                disabled={!canDellinCalc}
+                onClick={calcDellinDelivery}
+              >
+                {dellinQuoteLoading
+                  ? "Расчёт..."
+                  : "Рассчитать доставку Деловыми Линиями"}
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={!activeDirectionFilled}
+                onClick={copyShareLink}
+              >
+                Скопировать ссылку
+              </button>
+            </div>
+            {copyLinkStatus && activeDeliveryTab === "dellin" && (
+              <p className="meta-line">{copyLinkStatus}</p>
+            )}
             {totalPlacesAll === 0 && (
               <p className="meta-line">
                 Сначала добавьте товарные позиции или ручное место.
