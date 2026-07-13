@@ -96,6 +96,8 @@ h2 {
 .table-wrap {
   overflow-x: auto;
   margin-top: 14px;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -155,6 +157,28 @@ tr.header-row td {
   border-radius: 6px;
   padding: 2px 10px;
   font-size: 13px;
+}
+
+.direction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-button.direction-pin {
+  color: #8a919d;
+  font-size: 15px;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.link-button.direction-pin.pinned {
+  color: #b7791f;
+}
+
+.link-button.direction-apply {
+  color: #1c1e21;
+  text-decoration: none;
 }
 
 .chip.empty {
@@ -378,6 +402,7 @@ a {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   max-height: 280px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .suggest-list button {
@@ -390,6 +415,7 @@ a {
   padding: 7px 10px;
   font-size: 14px;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
 .suggest-list button:hover {
@@ -413,6 +439,11 @@ a {
   font-size: 14px;
 }
 
+.selected-chip span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .terminal-summary {
   display: grid;
   gap: 6px;
@@ -426,6 +457,7 @@ a {
   border: 1px solid #dde3ec;
   border-radius: 6px;
   padding: 8px 10px;
+  overflow-wrap: anywhere;
 }
 
 .terminal-address {
@@ -494,6 +526,213 @@ a {
 .delivery-tabs button:focus-visible {
   outline: 2px solid #1a5fd0;
   outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  main {
+    padding: 24px 16px 48px;
+  }
+
+  .delivery-row .field {
+    min-width: min(260px, 100%);
+  }
+
+  .delivery-tabs-row {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  main {
+    max-width: none;
+    padding: 16px 12px 40px;
+  }
+
+  h1 {
+    font-size: 22px;
+  }
+
+  h2 {
+    font-size: 17px;
+  }
+
+  .subtitle {
+    margin-bottom: 18px;
+  }
+
+  .card {
+    border-radius: 8px;
+    padding: 14px 12px;
+    margin-bottom: 14px;
+  }
+
+  .user-bar,
+  .delivery-tabs-row,
+  .add-row,
+  .delivery-row,
+  .totals {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .add-row,
+  .delivery-row {
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .field,
+  .field.grow,
+  .delivery-row .field,
+  .delivery-row .dim-field,
+  .qty-field,
+  .dim-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .field input,
+  .field select,
+  .qty-input,
+  .button {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 10px 14px;
+    text-align: center;
+  }
+
+  .button.secondary {
+    padding: 10px 14px;
+    font-size: 15px;
+  }
+
+  .link-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 4px 0;
+  }
+
+  .selected-chip {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .selected-chip .link-button {
+    align-self: flex-start;
+  }
+
+  .switch {
+    min-height: 44px;
+    padding: 6px 0;
+  }
+
+  .suggest-list {
+    position: static;
+    left: 0;
+    right: 0;
+    max-height: min(320px, 55vh);
+    width: 100%;
+    margin-top: 6px;
+  }
+
+  .suggest-list button {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+
+  .suggest-meta {
+    display: block;
+    margin-top: 2px;
+  }
+
+  .chip-list {
+    gap: 8px;
+  }
+
+  .chip {
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
+  }
+
+  .direction-chip {
+    display: flex;
+  }
+
+  .direction-pin {
+    flex: 0 0 auto;
+  }
+
+  .direction-apply {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .delivery-tabs {
+    display: flex;
+    width: 100%;
+  }
+
+  .delivery-tabs button {
+    flex: 1;
+    min-height: 44px;
+    padding: 9px 10px;
+  }
+
+  .table-wrap {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 0 12px 4px;
+  }
+
+  table {
+    min-width: 640px;
+  }
+
+  th,
+  td {
+    max-width: 220px;
+    padding: 8px 10px;
+  }
+
+  td.cell-wrap {
+    min-width: 220px;
+  }
+
+  .warning-list {
+    padding-left: 0;
+  }
+
+  .warning-list li,
+  .error-message,
+  .terminal-address {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 430px) {
+  .table-wrap {
+    scrollbar-width: thin;
+  }
 }
 
 .carrier-health {
@@ -577,4 +816,21 @@ h2 small {
   font-size: 13px;
   color: #5f6673;
   margin-top: 2px;
+}
+
+@media (max-width: 767px) {
+  .carrier-health {
+    width: 100%;
+  }
+
+  .carrier-health-badge {
+    min-height: 32px;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 430px) {
+  .carrier-health-badge {
+    flex: 1 1 100%;
+  }
 }

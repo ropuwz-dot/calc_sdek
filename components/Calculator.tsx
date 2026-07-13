@@ -920,14 +920,12 @@ function DirectionRecents<TCity>({
       {items.map((direction) => {
         const key = recentDirectionKey(carrier, direction);
         return (
-          <span
-            key={key}
-            className="chip"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-          >
+          <span key={key} className="chip direction-chip">
             <button
               type="button"
-              className="link-button"
+              className={`link-button direction-pin ${
+                direction.pinned ? "pinned" : ""
+              }`}
               onClick={() => onTogglePinned(key)}
               title={
                 direction.pinned
@@ -939,21 +937,14 @@ function DirectionRecents<TCity>({
                   ? "Открепить направление"
                   : "Закрепить направление"
               }
-              style={{
-                color: direction.pinned ? "#b7791f" : "#8a919d",
-                fontSize: 15,
-                lineHeight: 1,
-                textDecoration: "none",
-              }}
             >
               {direction.pinned ? "★" : "☆"}
             </button>
             <button
               type="button"
-              className="link-button"
+              className="link-button direction-apply"
               onClick={() => onApply(direction)}
               title="Применить направление"
-              style={{ color: "#1c1e21", textDecoration: "none" }}
             >
               {formatCity(direction.from)} → {formatCity(direction.to)}
             </button>
