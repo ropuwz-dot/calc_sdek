@@ -174,12 +174,20 @@ async function postDellinWithSession<T>(
 export async function checkDellinHealth(
   timeoutMs = 5_000
 ): Promise<{ ok: true } | { ok: false }> {
-  const result = await postDellinWithSession<unknown>(
-    "/v1/customers.json",
-    {},
-    { timeoutMs }
-  );
-  return result.ok ? { ok: true } : { ok: false };
+  const [session, cities] = await Promise.all([
+    getDellinSession(timeoutMs),
+    postDellin<{ cities?: { cityID?: number }[] }>(
+      "/v2/public/kladr.json",
+      { q: "Москва", limit: 1 },
+      { timeoutMs }
+    ),
+  ]);
+  const cityAvailable =
+    cities.ok &&
+    cities.data.cities?.some(
+      (city) => typeof city.cityID === "number" && city.cityID > 0
+    );
+  return session.ok && cityAvailable ? { ok: true } : { ok: false };
 }
 
 export async function suggestDellinCities(

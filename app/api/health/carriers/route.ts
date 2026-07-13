@@ -12,7 +12,7 @@ type CarrierStatus = {
 type CarrierKey = "cdek" | "dellin";
 
 const HEALTH_CACHE_TTL_MS = 60 * 1000;
-const HEALTH_TIMEOUT_MS = 5 * 1000;
+const HEALTH_TIMEOUT_MS = 8 * 1000;
 
 const checks: Record<CarrierKey, () => Promise<{ ok: true } | { ok: false }>> = {
   cdek: () => checkCdekHealth(HEALTH_TIMEOUT_MS),

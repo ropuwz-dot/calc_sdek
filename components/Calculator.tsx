@@ -34,6 +34,15 @@ import {
   encodeSharePayload,
   type ShareLinkPayload,
 } from "@/lib/shareLink";
+import {
+  addCalculationHistoryEntry,
+  clearCalculationHistory,
+  loadCalculationHistory,
+  removeCalculationHistoryEntry,
+  saveCalculationHistory,
+  type CalculationHistoryDraft,
+  type CalculationHistoryEntry,
+} from "@/lib/calculationHistory";
 
 /**
  * Клиент калькулятора. Работает только с собственным API приложения;
@@ -916,41 +925,150 @@ function DirectionRecents<TCity>({
   if (items.length === 0) return null;
 
   return (
-    <div className="chip-list" aria-label="Недавние направления">
-      {items.map((direction) => {
-        const key = recentDirectionKey(carrier, direction);
-        return (
-          <span key={key} className="chip direction-chip">
-            <button
-              type="button"
-              className={`link-button direction-pin ${
-                direction.pinned ? "pinned" : ""
-              }`}
-              onClick={() => onTogglePinned(key)}
-              title={
-                direction.pinned
-                  ? "Открепить направление"
-                  : "Закрепить направление"
-              }
-              aria-label={
-                direction.pinned
-                  ? "Открепить направление"
-                  : "Закрепить направление"
-              }
-            >
-              {direction.pinned ? "★" : "☆"}
-            </button>
-            <button
-              type="button"
-              className="link-button direction-apply"
-              onClick={() => onApply(direction)}
-              title="Применить направление"
-            >
-              {formatCity(direction.from)} → {formatCity(direction.to)}
-            </button>
-          </span>
-        );
-      })}
+    <div className="direction-recents">
+      <span className="direction-recents-label">Недавние направления</span>
+      <div className="chip-list" aria-label="Недавние направления">
+        {items.map((direction) => {
+          const key = recentDirectionKey(carrier, direction);
+          return (
+            <span key={key} className="chip direction-chip">
+              <button
+                type="button"
+                className={`link-button direction-pin ${
+                  direction.pinned ? "pinned" : ""
+                }`}
+                onClick={() => onTogglePinned(key)}
+                title={
+                  direction.pinned
+                    ? "Открепить направление"
+                    : "Закрепить направление"
+                }
+                aria-label={
+                  direction.pinned
+                    ? "Открепить направление"
+                    : "Закрепить направление"
+                }
+              >
+                {direction.pinned ? "★" : "☆"}
+              </button>
+              <button
+                type="button"
+                className="link-button direction-apply"
+                onClick={() => onApply(direction)}
+                title="Применить направление"
+              >
+                {formatCity(direction.from)} → {formatCity(direction.to)}
+              </button>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function historyCargoLabel(entry: CalculationHistoryEntry): string {
+  const articles = entry.payload.positions
+    .slice(0, 3)
+    .map((item) => `${item.article} × ${item.qty}`);
+  if (entry.payload.positions.length > 3) {
+    articles.push(`ещё ${entry.payload.positions.length - 3}`);
+  }
+  const manualCount = entry.payload.manualPlaces.reduce(
+    (sum, place) => sum + place.count,
+    0
+  );
+  if (manualCount > 0) articles.push(`ручных мест: ${manualCount}`);
+  return articles.join(", ") || "Без товарных позиций";
+}
+
+function historyPeriodLabel(entry: CalculationHistoryEntry): string {
+  if (entry.periodMin <= 0 && entry.periodMax <= 0) return "срок не указан";
+  return entry.periodMin === entry.periodMax
+    ? `${entry.periodMin} дн.`
+    : `${entry.periodMin}–${entry.periodMax} дн.`;
+}
+
+function CalculationHistoryPanel({
+  entries,
+  onOpen,
+  onRemove,
+  onClear,
+}: {
+  entries: CalculationHistoryEntry[];
+  onOpen: (entry: CalculationHistoryEntry) => void;
+  onRemove: (id: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="card calculation-history">
+      <div className="history-heading">
+        <h2>
+          История расчётов <small>{entries.length}/20</small>
+        </h2>
+        {entries.length > 0 && (
+          <button type="button" className="link-button" onClick={onClear}>
+            Очистить историю
+          </button>
+        )}
+      </div>
+      {entries.length === 0 ? (
+        <p className="meta-line">Пока нет сохранённых расчётов.</p>
+      ) : (
+        <div className="history-list">
+          {entries.map((entry) => (
+            <article className="history-row" key={entry.id}>
+              <div className="history-main">
+                <div className="history-primary">
+                  <strong>
+                    {entry.carrier === "cdek" ? "СДЭК" : "Деловые Линии"}
+                  </strong>
+                  <time dateTime={new Date(entry.createdAt).toISOString()}>
+                    {new Date(entry.createdAt).toLocaleString("ru-RU", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </div>
+                <div className="history-route">
+                  {entry.from} → {entry.to}
+                </div>
+                <div className="history-meta">
+                  {DELIVERY_MODE_LABELS[entry.mode]} · {historyCargoLabel(entry)}
+                </div>
+                <div className="history-meta">
+                  {entry.totalPlaces} мест · {entry.totalWeightKg} кг ·{" "}
+                  {entry.totalVolumeM3.toFixed(4)} м³
+                </div>
+              </div>
+              <div className="history-result">
+                <strong>{rub(entry.totalPrice)} ₽</strong>
+                <span>{entry.tariffName}</span>
+                <span>{historyPeriodLabel(entry)}</span>
+              </div>
+              <div className="history-actions">
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => onOpen(entry)}
+                >
+                  Открыть
+                </button>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => onRemove(entry.id)}
+                >
+                  Удалить
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1052,12 +1170,42 @@ export default function Calculator() {
     useState<DeliveryTab>(shareRestore.payload?.tab ?? "cdek");
   const [recentDirections, setRecentDirections] =
     useState<RecentDirectionsState>(() => loadRecentDirections());
+  const [calculationHistory, setCalculationHistory] = useState<
+    CalculationHistoryEntry[]
+  >(() => loadCalculationHistory());
   const [copyLinkStatus, setCopyLinkStatus] = useState<string | null>(null);
   const restoreHandled = useRef(false);
 
   const updateRecentDirections = (next: RecentDirectionsState) => {
     setRecentDirections(next);
     saveRecentDirections(next);
+  };
+
+  const rememberCalculation = (draft: CalculationHistoryDraft) => {
+    setCalculationHistory((current) => {
+      const next = addCalculationHistoryEntry(current, draft);
+      saveCalculationHistory(next);
+      return next;
+    });
+  };
+
+  const removeHistoryEntry = (id: string) => {
+    setCalculationHistory((current) => {
+      const next = removeCalculationHistoryEntry(current, id);
+      saveCalculationHistory(next);
+      return next;
+    });
+  };
+
+  const clearHistory = () => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Удалить всю локальную историю расчётов?")
+    ) {
+      return;
+    }
+    clearCalculationHistory();
+    setCalculationHistory([]);
   };
 
   // Смена города сбрасывает выбранный в нём ПВЗ и устаревший результат расчёта
@@ -1456,6 +1604,13 @@ export default function Calculator() {
     clientPays,
   });
 
+  const openHistoryEntry = (entry: CalculationHistoryEntry) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("c", encodeSharePayload(entry.payload));
+    window.location.assign(url.toString());
+  };
+
   const activeDirectionFilled =
     activeDeliveryTab === "cdek"
       ? fromCity !== null && toCity !== null
@@ -1524,6 +1679,26 @@ export default function Calculator() {
       } else {
         setQuote(data);
         rememberCdekDirection();
+        const tariff = data.tariffs?.[0];
+        if (tariff) {
+          rememberCalculation({
+            carrier: "cdek",
+            from: fromCity.name,
+            to: toCity.name,
+            mode,
+            totalPlaces: totalPlacesAll,
+            totalWeightKg: totalWeightAll,
+            totalVolumeM3: totalVolumeAll,
+            tariffName: tariff.name,
+            totalPrice:
+              tariff.deliverySum *
+              (1 + VAT_RATE) *
+              (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1),
+            periodMin: tariff.periodMin,
+            periodMax: tariff.periodMax,
+            payload: buildSharePayload(),
+          });
+        }
       }
     } catch (e) {
       setQuoteError(
@@ -1601,6 +1776,29 @@ export default function Calculator() {
       } else {
         setDellinQuote(data);
         rememberDellinDirection();
+        const tariff = data.tariffs?.[0];
+        if (tariff) {
+          rememberCalculation({
+            carrier: "dellin",
+            from: [dellinFromCity.name, dellinFromCity.regionName]
+              .filter(Boolean)
+              .join(", "),
+            to: [dellinToCity.name, dellinToCity.regionName]
+              .filter(Boolean)
+              .join(", "),
+            mode: dellinMode,
+            totalPlaces: totalPlacesAll,
+            totalWeightKg: totalWeightAll,
+            totalVolumeM3: totalVolumeAll,
+            tariffName: tariff.name,
+            totalPrice:
+              tariff.deliverySum *
+              (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1),
+            periodMin: tariff.periodMin,
+            periodMax: tariff.periodMax,
+            payload: buildSharePayload(),
+          });
+        }
       }
     } catch (e) {
       setDellinQuoteError(
@@ -1967,6 +2165,13 @@ export default function Calculator() {
         </div>
         <CarrierHealthBadges />
       </div>
+
+      <CalculationHistoryPanel
+        entries={calculationHistory}
+        onOpen={openHistoryEntry}
+        onRemove={removeHistoryEntry}
+        onClear={clearHistory}
+      />
 
       {bestCdekTariff && bestDellinTariff ? (
         <div className="card">
