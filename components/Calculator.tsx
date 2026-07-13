@@ -46,6 +46,23 @@ interface Position extends PositionInput {
 
 type ManualPlace = ManualPlaceInput & { id: number };
 type DeliveryTab = "cdek" | "dellin";
+type CarrierHealthStatus = "ok" | "down" | "unknown";
+
+interface CarrierHealthItem {
+  status: "ok" | "down";
+  checkedAt: string;
+  latencyMs: number;
+}
+
+type CarrierHealthResponse = {
+  cdek: CarrierHealthItem;
+  dellin: CarrierHealthItem;
+};
+
+type CarrierHealthState = Record<
+  DeliveryTab,
+  { status: CarrierHealthStatus; checkedAt: string | null }
+>;
 
 /** Ставка НДС, добавляется к стоимости из расчёта СДЭК */
 const VAT_RATE = 0.22;
@@ -107,6 +124,91 @@ async function apiPost<T>(url: string, body: unknown): Promise<T> {
   const data = await parseJson<T>(res);
   if (!res.ok) throw new Error(data.message ?? `Ошибка запроса (${res.status})`);
   return data;
+}
+
+function formatCheckedAt(value: string | null): string {
+  if (!value) return "проверка ещё не выполнена";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "время проверки неизвестно";
+  return `проверено ${date.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function CarrierHealthBadges() {
+  const [health, setHealth] = useState<CarrierHealthState>({
+    cdek: { status: "unknown", checkedAt: null },
+    dellin: { status: "unknown", checkedAt: null },
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = () => {
+      apiGet<CarrierHealthResponse>("/api/health/carriers")
+        .then((data) => {
+          if (cancelled) return;
+          setHealth({
+            cdek: {
+              status: data.cdek.status,
+              checkedAt: data.cdek.checkedAt,
+            },
+            dellin: {
+              status: data.dellin.status,
+              checkedAt: data.dellin.checkedAt,
+            },
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setHealth({
+            cdek: { status: "unknown", checkedAt: null },
+            dellin: { status: "unknown", checkedAt: null },
+          });
+        });
+    };
+
+    load();
+    const interval = window.setInterval(load, 90_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  return (
+    <div className="carrier-health" aria-label="Состояние транспортных компаний">
+      <CarrierHealthBadge label="СДЭК" state={health.cdek} />
+      <CarrierHealthBadge label="ДЛ" state={health.dellin} />
+    </div>
+  );
+}
+
+function CarrierHealthBadge({
+  label,
+  state,
+}: {
+  label: string;
+  state: CarrierHealthState[DeliveryTab];
+}) {
+  const text =
+    state.status === "ok"
+      ? "работает"
+      : state.status === "down"
+        ? "недоступна"
+        : "неизвестно";
+
+  return (
+    <span
+      className={`carrier-health-badge ${state.status}`}
+      title={formatCheckedAt(state.checkedAt)}
+    >
+      <span className="carrier-health-dot" aria-hidden="true" />
+      <span>{label}</span>
+      <span>{text}</span>
+    </span>
+  );
 }
 
 // ---------- Улица с подсказками DaData (для СДЭК) ----------
@@ -1847,25 +1949,32 @@ export default function Calculator() {
       )}
 
       {/* Доставка */}
-      <div className="delivery-tabs" role="tablist" aria-label="Транспортная компания">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeDeliveryTab === "cdek"}
-          className={activeDeliveryTab === "cdek" ? "active" : ""}
-          onClick={() => setActiveDeliveryTab("cdek")}
+      <div className="delivery-tabs-row">
+        <div
+          className="delivery-tabs"
+          role="tablist"
+          aria-label="Транспортная компания"
         >
-          СДЭК
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeDeliveryTab === "dellin"}
-          className={activeDeliveryTab === "dellin" ? "active" : ""}
-          onClick={() => setActiveDeliveryTab("dellin")}
-        >
-          Деловые Линии
-        </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeDeliveryTab === "cdek"}
+            className={activeDeliveryTab === "cdek" ? "active" : ""}
+            onClick={() => setActiveDeliveryTab("cdek")}
+          >
+            СДЭК
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeDeliveryTab === "dellin"}
+            className={activeDeliveryTab === "dellin" ? "active" : ""}
+            onClick={() => setActiveDeliveryTab("dellin")}
+          >
+            Деловые Линии
+          </button>
+        </div>
+        <CarrierHealthBadges />
       </div>
 
       {bestCdekTariff && bestDellinTariff ? (

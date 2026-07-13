@@ -41,7 +41,7 @@ export function getCdekConfig():
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
-async function getCdekToken(): Promise<
+async function getCdekToken(timeoutMs?: number): Promise<
   { ok: true; token: string; baseUrl: string } | { ok: false; message: string }
 > {
   const config = getCdekConfig();
@@ -63,6 +63,7 @@ async function getCdekToken(): Promise<
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
       cache: "no-store",
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
   } catch {
     return {
@@ -95,6 +96,13 @@ async function getCdekToken(): Promise<
     expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
   };
   return { ok: true, token: data.access_token, baseUrl: config.baseUrl };
+}
+
+export async function checkCdekHealth(
+  timeoutMs = 5_000
+): Promise<{ ok: true } | { ok: false }> {
+  const auth = await getCdekToken(timeoutMs);
+  return auth.ok ? { ok: true } : { ok: false };
 }
 
 // ---------- Подсказки городов ----------

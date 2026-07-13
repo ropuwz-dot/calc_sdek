@@ -462,6 +462,15 @@ a {
   border: 1px solid #dde1e7;
   border-radius: 8px;
   padding: 4px;
+  margin: 0;
+}
+
+.delivery-tabs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
   margin: 0 0 16px;
 }
 
@@ -485,6 +494,51 @@ a {
 .delivery-tabs button:focus-visible {
   outline: 2px solid #1a5fd0;
   outline-offset: 2px;
+}
+
+.carrier-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.carrier-health-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dde1e7;
+  border-radius: 999px;
+  background: #f0f2f5;
+  color: #4b5563;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.carrier-health-badge.ok {
+  background: #e6f4ea;
+  border-color: #c7e8d1;
+  color: #17703a;
+}
+
+.carrier-health-badge.down {
+  background: #fdecea;
+  border-color: #f5c6c2;
+  color: #b3261e;
+}
+
+.carrier-health-badge.unknown {
+  background: #eef1f5;
+  border-color: #dde1e7;
+  color: #5f6673;
+}
+
+.carrier-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .button:disabled {

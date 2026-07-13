@@ -39,7 +39,8 @@ interface DellinApiResponse<T> {
 
 async function postDellin<T>(
   path: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  options?: { timeoutMs?: number }
 ): Promise<{ ok: true; data: T } | { ok: false; message: string }> {
   const config = getDellinConfig();
   if (!config.ok) return config;
@@ -51,7 +52,7 @@ async function postDellin<T>(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ appkey: config.appKey, ...body }),
       cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(options?.timeoutMs ?? 10_000),
     });
   } catch {
     return {
@@ -88,7 +89,7 @@ async function postDellin<T>(
 
 let sessionCache: { sessionId: string; expiresAt: number } | null = null;
 
-async function getDellinSession(): Promise<
+async function getDellinSession(timeoutMs?: number): Promise<
   { ok: true; sessionId: string } | { ok: false; message: string }
 > {
   if (sessionCache && sessionCache.expiresAt > Date.now() + 60_000) {
@@ -102,7 +103,7 @@ async function getDellinSession(): Promise<
     sessionID?: string;
     sessionId?: string;
     session?: string;
-  }>("/v4/auth/login.json", { pat: config.pat });
+  }>("/v4/auth/login.json", { pat: config.pat }, { timeoutMs });
   if (!result.ok) return result;
 
   const sessionId =
@@ -132,25 +133,53 @@ function isSessionError(message: string): boolean {
  */
 async function postDellinWithSession<T>(
   path: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  options?: { timeoutMs?: number }
 ): Promise<{ ok: true; data: T } | { ok: false; message: string }> {
-  const session = await getDellinSession();
+  const deadline = options?.timeoutMs ? Date.now() + options.timeoutMs : null;
+  const remainingTimeout = () =>
+    deadline ? Math.max(1, deadline - Date.now()) : undefined;
+
+  const session = await getDellinSession(remainingTimeout());
   if (!session.ok) return session;
 
-  let result = await postDellin<T>(path, {
-    ...body,
-    sessionID: session.sessionId,
-  });
+  let result = await postDellin<T>(
+    path,
+    {
+      ...body,
+      sessionID: session.sessionId,
+    },
+    {
+      timeoutMs: remainingTimeout(),
+    }
+  );
   if (!result.ok && isSessionError(result.message)) {
     sessionCache = null;
-    const fresh = await getDellinSession();
+    const fresh = await getDellinSession(remainingTimeout());
     if (!fresh.ok) return fresh;
-    result = await postDellin<T>(path, {
-      ...body,
-      sessionID: fresh.sessionId,
-    });
+    result = await postDellin<T>(
+      path,
+      {
+        ...body,
+        sessionID: fresh.sessionId,
+      },
+      {
+        timeoutMs: remainingTimeout(),
+      }
+    );
   }
   return result;
+}
+
+export async function checkDellinHealth(
+  timeoutMs = 5_000
+): Promise<{ ok: true } | { ok: false }> {
+  const result = await postDellinWithSession<unknown>(
+    "/v1/customers.json",
+    {},
+    { timeoutMs }
+  );
+  return result.ok ? { ok: true } : { ok: false };
 }
 
 export async function suggestDellinCities(
