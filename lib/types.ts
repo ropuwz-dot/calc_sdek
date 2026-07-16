@@ -247,3 +247,44 @@ export interface DellinQuoteResponse {
   };
   warnings?: string[];
 }
+
+export interface MagicTransCityDto {
+  id: string;
+  name: string;
+  region: string;
+}
+
+export interface MagicTransTerminalDto {
+  id: string;
+  name: string;
+  address: string;
+  territoryId: string;
+  territory: string;
+}
+
+export interface MagicTransTariffDto {
+  name: string;
+  deliverySum: number;
+  periodMin: number;
+  periodMax: number;
+  deliveryDate: string | null;
+}
+
+export interface MagicTransQuoteRequest {
+  items: PositionInput[];
+  manualPlaces?: ManualPlaceInput[];
+  fromCityId: string;
+  toCityId: string;
+  fromAddress?: string;
+  toAddress?: string;
+  fromTerminalId?: string;
+  toTerminalId?: string;
+  mode: DeliveryMode;
+}
+
+export interface MagicTransQuoteResponse {
+  ok: boolean;
+  message?: string;
+  packing?: PackingDto;
+  tariffs?: MagicTransTariffDto[];
+}

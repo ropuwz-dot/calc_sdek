@@ -28,6 +28,7 @@ import {
   toggleDirectionPinned,
   type RecentDirection,
   type RecentDirectionsState,
+  type RecentCarrier,
 } from "@/lib/recents";
 import {
   decodeSharePayload,
@@ -43,6 +44,7 @@ import {
   type CalculationHistoryDraft,
   type CalculationHistoryEntry,
 } from "@/lib/calculationHistory";
+import MagicTransPanel from "./MagicTransPanel";
 
 /**
  * Клиент калькулятора. Работает только с собственным API приложения;
@@ -54,7 +56,7 @@ interface Position extends PositionInput {
 }
 
 type ManualPlace = ManualPlaceInput & { id: number };
-type DeliveryTab = "cdek" | "dellin";
+type DeliveryTab = "cdek" | "dellin" | "magic-trans";
 type CarrierHealthStatus = "ok" | "down" | "unknown";
 
 interface CarrierHealthItem {
@@ -66,6 +68,7 @@ interface CarrierHealthItem {
 type CarrierHealthResponse = {
   cdek: CarrierHealthItem;
   dellin: CarrierHealthItem;
+  magicTrans: CarrierHealthItem;
 };
 
 type CarrierHealthState = Record<
@@ -149,6 +152,7 @@ function CarrierHealthBadges() {
   const [health, setHealth] = useState<CarrierHealthState>({
     cdek: { status: "unknown", checkedAt: null },
     dellin: { status: "unknown", checkedAt: null },
+    "magic-trans": { status: "unknown", checkedAt: null },
   });
 
   useEffect(() => {
@@ -167,6 +171,10 @@ function CarrierHealthBadges() {
               status: data.dellin.status,
               checkedAt: data.dellin.checkedAt,
             },
+            "magic-trans": {
+              status: data.magicTrans.status,
+              checkedAt: data.magicTrans.checkedAt,
+            },
           });
         })
         .catch(() => {
@@ -174,6 +182,7 @@ function CarrierHealthBadges() {
           setHealth({
             cdek: { status: "unknown", checkedAt: null },
             dellin: { status: "unknown", checkedAt: null },
+            "magic-trans": { status: "unknown", checkedAt: null },
           });
         });
     };
@@ -190,6 +199,7 @@ function CarrierHealthBadges() {
     <div className="carrier-health" aria-label="Состояние транспортных компаний">
       <CarrierHealthBadge label="СДЭК" state={health.cdek} />
       <CarrierHealthBadge label="ДЛ" state={health.dellin} />
+      <CarrierHealthBadge label="Magic Trans" state={health["magic-trans"]} />
     </div>
   );
 }
@@ -916,7 +926,7 @@ function DirectionRecents<TCity>({
   onTogglePinned,
   formatCity,
 }: {
-  carrier: DeliveryTab;
+  carrier: RecentCarrier;
   items: RecentDirection<TCity>[];
   onApply: (direction: RecentDirection<TCity>) => void;
   onTogglePinned: (key: string) => void;
@@ -1295,7 +1305,7 @@ export default function Calculator() {
     selectDellinToCity(direction.to);
   };
 
-  const toggleRecentPinned = (carrier: DeliveryTab, key: string) => {
+  const toggleRecentPinned = (carrier: RecentCarrier, key: string) => {
     updateRecentDirections(
       toggleDirectionPinned(recentDirections, carrier, key)
     );
@@ -1553,7 +1563,7 @@ export default function Calculator() {
 
   const buildSharePayload = (): ShareLinkPayload => ({
     v: 1,
-    tab: activeDeliveryTab,
+    tab: activeDeliveryTab === "magic-trans" ? "cdek" : activeDeliveryTab,
     cdek: {
       cities: {
         from: fromCity,
@@ -1614,7 +1624,9 @@ export default function Calculator() {
   const activeDirectionFilled =
     activeDeliveryTab === "cdek"
       ? fromCity !== null && toCity !== null
-      : dellinFromCity !== null && dellinToCity !== null;
+      : activeDeliveryTab === "dellin"
+        ? dellinFromCity !== null && dellinToCity !== null
+        : false;
 
   const copyShareLink = async () => {
     if (!activeDirectionFilled || typeof window === "undefined") return;
@@ -2161,6 +2173,15 @@ export default function Calculator() {
             onClick={() => setActiveDeliveryTab("dellin")}
           >
             Деловые Линии
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeDeliveryTab === "magic-trans"}
+            className={activeDeliveryTab === "magic-trans" ? "active" : ""}
+            onClick={() => setActiveDeliveryTab("magic-trans")}
+          >
+            Magic Trans
           </button>
         </div>
         <CarrierHealthBadges />
@@ -2765,6 +2786,17 @@ export default function Calculator() {
             </div>
           )}
         </>
+      )}
+      {activeDeliveryTab === "magic-trans" && (
+        <MagicTransPanel
+          items={positions.map(({ article, qty }) => ({ article, qty }))}
+          manualPlaces={manualPlaces.map(({ id, ...place }) => {
+            void id;
+            return place;
+          })}
+          canShip={canShipAll}
+          totalPlaces={totalPlacesAll}
+        />
       )}
     </>
   );

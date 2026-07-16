@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSheetsUser } from "@/lib/apiAuth";
 import { checkCdekHealth } from "@/lib/cdek";
 import { checkDellinHealth } from "@/lib/dellin";
+import { checkMagicTransHealth } from "@/lib/magicTrans";
 
 type CarrierStatus = {
   status: "ok" | "down";
@@ -9,7 +10,7 @@ type CarrierStatus = {
   latencyMs: number;
 };
 
-type CarrierKey = "cdek" | "dellin";
+type CarrierKey = "cdek" | "dellin" | "magicTrans";
 
 const HEALTH_CACHE_TTL_MS = 60 * 1000;
 const HEALTH_TIMEOUT_MS = 8 * 1000;
@@ -17,6 +18,7 @@ const HEALTH_TIMEOUT_MS = 8 * 1000;
 const checks: Record<CarrierKey, () => Promise<{ ok: true } | { ok: false }>> = {
   cdek: () => checkCdekHealth(HEALTH_TIMEOUT_MS),
   dellin: () => checkDellinHealth(HEALTH_TIMEOUT_MS),
+  magicTrans: () => checkMagicTransHealth(),
 };
 
 const healthCache = new Map<CarrierKey, { value: CarrierStatus; at: number }>();
@@ -67,10 +69,11 @@ export async function GET() {
     );
   }
 
-  const [cdek, dellin] = await Promise.all([
+  const [cdek, dellin, magicTrans] = await Promise.all([
     checkCarrier("cdek"),
     checkCarrier("dellin"),
+    checkCarrier("magicTrans"),
   ]);
 
-  return NextResponse.json({ cdek, dellin });
+  return NextResponse.json({ cdek, dellin, magicTrans });
 }
