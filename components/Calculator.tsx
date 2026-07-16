@@ -21,16 +21,6 @@ import type {
 } from "@/lib/types";
 import { DELIVERY_MODE_LABELS, pvzFitProblem } from "@/lib/types";
 import {
-  loadRecentDirections,
-  recentDirectionKey,
-  rememberDirection,
-  saveRecentDirections,
-  toggleDirectionPinned,
-  type RecentDirection,
-  type RecentDirectionsState,
-  type RecentCarrier,
-} from "@/lib/recents";
-import {
   decodeSharePayload,
   encodeSharePayload,
   type ShareLinkPayload,
@@ -919,64 +909,6 @@ function PvzField({
   );
 }
 
-function DirectionRecents<TCity>({
-  carrier,
-  items,
-  onApply,
-  onTogglePinned,
-  formatCity,
-}: {
-  carrier: RecentCarrier;
-  items: RecentDirection<TCity>[];
-  onApply: (direction: RecentDirection<TCity>) => void;
-  onTogglePinned: (key: string) => void;
-  formatCity: (city: TCity) => string;
-}) {
-  if (items.length === 0) return null;
-
-  return (
-    <div className="direction-recents">
-      <span className="direction-recents-label">Недавние направления</span>
-      <div className="chip-list" aria-label="Недавние направления">
-        {items.map((direction) => {
-          const key = recentDirectionKey(carrier, direction);
-          return (
-            <span key={key} className="chip direction-chip">
-              <button
-                type="button"
-                className={`link-button direction-pin ${
-                  direction.pinned ? "pinned" : ""
-                }`}
-                onClick={() => onTogglePinned(key)}
-                title={
-                  direction.pinned
-                    ? "Открепить направление"
-                    : "Закрепить направление"
-                }
-                aria-label={
-                  direction.pinned
-                    ? "Открепить направление"
-                    : "Закрепить направление"
-                }
-              >
-                {direction.pinned ? "★" : "☆"}
-              </button>
-              <button
-                type="button"
-                className="link-button direction-apply"
-                onClick={() => onApply(direction)}
-                title="Применить направление"
-              >
-                {formatCity(direction.from)} → {formatCity(direction.to)}
-              </button>
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function historyCargoLabel(entry: CalculationHistoryEntry): string {
   const articles = entry.payload.positions
     .slice(0, 3)
@@ -1010,73 +942,90 @@ function CalculationHistoryPanel({
   onRemove: (id: string) => void;
   onClear: () => void;
 }) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   return (
     <div className="card calculation-history">
       <div className="history-heading">
         <h2>
           История расчётов <small>{entries.length}/20</small>
         </h2>
-        {entries.length > 0 && (
-          <button type="button" className="link-button" onClick={onClear}>
-            Очистить историю
+        <div className="history-heading-actions">
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+            aria-expanded={!isCollapsed}
+            aria-controls="calculation-history-content"
+          >
+            {isCollapsed ? "Развернуть" : "Свернуть"}
           </button>
-        )}
+          {entries.length > 0 && (
+            <button type="button" className="link-button" onClick={onClear}>
+              Очистить историю
+            </button>
+          )}
+        </div>
       </div>
-      {entries.length === 0 ? (
-        <p className="meta-line">Пока нет сохранённых расчётов.</p>
-      ) : (
-        <div className="history-list">
-          {entries.map((entry) => (
-            <article className="history-row" key={entry.id}>
-              <div className="history-main">
-                <div className="history-primary">
-                  <strong>
-                    {entry.carrier === "cdek" ? "СДЭК" : "Деловые Линии"}
-                  </strong>
-                  <time dateTime={new Date(entry.createdAt).toISOString()}>
-                    {new Date(entry.createdAt).toLocaleString("ru-RU", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </time>
-                </div>
-                <div className="history-route">
-                  {entry.from} → {entry.to}
-                </div>
-                <div className="history-meta">
-                  {DELIVERY_MODE_LABELS[entry.mode]} · {historyCargoLabel(entry)}
-                </div>
-                <div className="history-meta">
-                  {entry.totalPlaces} мест · {entry.totalWeightKg} кг ·{" "}
-                  {entry.totalVolumeM3.toFixed(4)} м³
-                </div>
-              </div>
-              <div className="history-result">
-                <strong>{rub(entry.totalPrice)} ₽</strong>
-                <span>{entry.tariffName}</span>
-                <span>{historyPeriodLabel(entry)}</span>
-              </div>
-              <div className="history-actions">
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() => onOpen(entry)}
-                >
-                  Открыть
-                </button>
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => onRemove(entry.id)}
-                >
-                  Удалить
-                </button>
-              </div>
-            </article>
-          ))}
+      {!isCollapsed && (
+        <div id="calculation-history-content">
+          {entries.length === 0 ? (
+            <p className="meta-line">Пока нет сохранённых расчётов.</p>
+          ) : (
+            <div className="history-list">
+              {entries.map((entry) => (
+                <article className="history-row" key={entry.id}>
+                  <div className="history-main">
+                    <div className="history-primary">
+                      <strong>
+                        {entry.carrier === "cdek" ? "СДЭК" : "Деловые Линии"}
+                      </strong>
+                      <time dateTime={new Date(entry.createdAt).toISOString()}>
+                        {new Date(entry.createdAt).toLocaleString("ru-RU", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    </div>
+                    <div className="history-route">
+                      {entry.from} → {entry.to}
+                    </div>
+                    <div className="history-meta">
+                      {DELIVERY_MODE_LABELS[entry.mode]} · {historyCargoLabel(entry)}
+                    </div>
+                    <div className="history-meta">
+                      {entry.totalPlaces} мест · {entry.totalWeightKg} кг ·{" "}
+                      {entry.totalVolumeM3.toFixed(4)} м³
+                    </div>
+                  </div>
+                  <div className="history-result">
+                    <strong>{rub(entry.totalPrice)} ₽</strong>
+                    <span>{entry.tariffName}</span>
+                    <span>{historyPeriodLabel(entry)}</span>
+                  </div>
+                  <div className="history-actions">
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() => onOpen(entry)}
+                    >
+                      Открыть
+                    </button>
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => onRemove(entry.id)}
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1178,18 +1127,11 @@ export default function Calculator() {
   );
   const [activeDeliveryTab, setActiveDeliveryTab] =
     useState<DeliveryTab>(shareRestore.payload?.tab ?? "cdek");
-  const [recentDirections, setRecentDirections] =
-    useState<RecentDirectionsState>(() => loadRecentDirections());
   const [calculationHistory, setCalculationHistory] = useState<
     CalculationHistoryEntry[]
   >(() => loadCalculationHistory());
   const [copyLinkStatus, setCopyLinkStatus] = useState<string | null>(null);
   const restoreHandled = useRef(false);
-
-  const updateRecentDirections = (next: RecentDirectionsState) => {
-    setRecentDirections(next);
-    saveRecentDirections(next);
-  };
 
   const rememberCalculation = (draft: CalculationHistoryDraft) => {
     setCalculationHistory((current) => {
@@ -1291,43 +1233,6 @@ export default function Calculator() {
     setDellinToStreet(null);
     setDellinQuote(null);
     setDellinQuoteError(null);
-  };
-
-  const applyCdekDirection = (direction: RecentDirection<CityDto>) => {
-    setFromCity(direction.from);
-    setToCity(direction.to);
-  };
-
-  const applyDellinDirection = (
-    direction: RecentDirection<DellinCityDto>
-  ) => {
-    selectDellinFromCity(direction.from);
-    selectDellinToCity(direction.to);
-  };
-
-  const toggleRecentPinned = (carrier: RecentCarrier, key: string) => {
-    updateRecentDirections(
-      toggleDirectionPinned(recentDirections, carrier, key)
-    );
-  };
-
-  const rememberCdekDirection = () => {
-    if (!fromCity || !toCity) return;
-    updateRecentDirections(
-      rememberDirection(recentDirections, "cdek", fromCity, toCity)
-    );
-  };
-
-  const rememberDellinDirection = () => {
-    if (!dellinFromCity || !dellinToCity) return;
-    updateRecentDirections(
-      rememberDirection(
-        recentDirections,
-        "dellin",
-        dellinFromCity,
-        dellinToCity
-      )
-    );
   };
 
   const packRequestId = useRef(0);
@@ -1690,7 +1595,6 @@ export default function Calculator() {
         if (data.tariffs) setQuote(data);
       } else {
         setQuote(data);
-        rememberCdekDirection();
         const tariff = data.tariffs?.[0];
         if (tariff) {
           rememberCalculation({
@@ -1787,7 +1691,6 @@ export default function Calculator() {
         if (data.tariffs) setDellinQuote(data);
       } else {
         setDellinQuote(data);
-        rememberDellinDirection();
         const tariff = data.tariffs?.[0];
         if (tariff) {
           rememberCalculation({
@@ -2297,13 +2200,6 @@ export default function Calculator() {
             </label>
           </div>
         </div>
-        <DirectionRecents
-          carrier="cdek"
-          items={recentDirections.cdek}
-          onApply={applyCdekDirection}
-          onTogglePinned={(key) => toggleRecentPinned("cdek", key)}
-          formatCity={(city) => city.name}
-        />
         <div className="delivery-row">
           {mode.startsWith("door") ? (
             <>
@@ -2557,15 +2453,6 @@ export default function Calculator() {
                 </label>
               </div>
             </div>
-            <DirectionRecents
-              carrier="dellin"
-              items={recentDirections.dellin}
-              onApply={applyDellinDirection}
-              onTogglePinned={(key) => toggleRecentPinned("dellin", key)}
-              formatCity={(city) =>
-                [city.name, city.regionName].filter(Boolean).join(", ")
-              }
-            />
             <div className="delivery-row">
               {dellinMode.startsWith("door") ? (
                 <>

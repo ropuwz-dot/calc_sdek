@@ -165,36 +165,6 @@ tr.header-row td {
   gap: 8px;
 }
 
-.direction-recents {
-  margin: 10px 0 12px;
-}
-
-.direction-recents-label {
-  color: #5f6673;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.direction-recents .chip-list {
-  margin-top: 4px;
-}
-
-.link-button.direction-pin {
-  color: #8a919d;
-  font-size: 15px;
-  line-height: 1;
-  text-decoration: none;
-}
-
-.link-button.direction-pin.pinned {
-  color: #b7791f;
-}
-
-.link-button.direction-apply {
-  color: #1c1e21;
-  text-decoration: none;
-}
-
 .chip.empty {
   background: #fdecea;
   border-color: #f5c6c2;
@@ -804,6 +774,12 @@ a {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
+}
+
+.history-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .history-list {
