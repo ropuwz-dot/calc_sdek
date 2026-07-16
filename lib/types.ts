@@ -264,7 +264,12 @@ export interface MagicTransTerminalDto {
 
 export interface MagicTransTariffDto {
   name: string;
+  /** Итог: тариф Magic Trans плюс выбранные адресные услуги и страхование. */
   deliverySum: number;
+  baseDeliverySum: number;
+  pickupSum: number;
+  addressDeliverySum: number;
+  insuranceSum: number;
   periodMin: number;
   periodMax: number;
   deliveryDate: string | null;
@@ -279,6 +284,8 @@ export interface MagicTransQuoteRequest {
   toAddress?: string;
   fromTerminalId?: string;
   toTerminalId?: string;
+  /** Объявленная стоимость груза, ₽; страхование Magic Trans = max(0,2%, 40 ₽). */
+  declaredValue: number;
   mode: DeliveryMode;
 }
 

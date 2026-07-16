@@ -9,6 +9,7 @@ import type {
   DellinStreetDto,
   DellinTerminalDto,
   DellinTariffDto,
+  MagicTransQuoteResponse,
   ManualPlaceInput,
   PackingDto,
   PlaceDto,
@@ -1220,6 +1221,8 @@ export default function Calculator() {
     useState<DellinQuoteResponse | null>(null);
   const [dellinQuoteLoading, setDellinQuoteLoading] = useState(false);
   const [dellinQuoteError, setDellinQuoteError] = useState<string | null>(null);
+  const [magicTransQuote, setMagicTransQuote] =
+    useState<MagicTransQuoteResponse | null>(null);
 
   // Смена города/режима ДЛ сбрасывает устаревший результат расчёта
   const selectDellinFromCity = (city: DellinCityDto | null) => {
@@ -1748,6 +1751,39 @@ export default function Calculator() {
 
   const bestCdekTariff = quote?.tariffs?.[0];
   const bestDellinTariff = dellinQuote?.tariffs?.[0];
+  const bestMagicTransTariff = magicTransQuote?.tariffs?.[0];
+  const comparisonTariffs = [
+    bestCdekTariff
+      ? {
+          carrier: "СДЭК",
+          name: bestCdekTariff.name,
+          sum: bestCdekTariff.deliverySum,
+          addVat: true,
+          min: bestCdekTariff.periodMin,
+          max: bestCdekTariff.periodMax,
+        }
+      : null,
+    bestDellinTariff
+      ? {
+          carrier: "Деловые Линии",
+          name: bestDellinTariff.name,
+          sum: bestDellinTariff.deliverySum,
+          addVat: false,
+          min: bestDellinTariff.periodMin,
+          max: bestDellinTariff.periodMax,
+        }
+      : null,
+    bestMagicTransTariff
+      ? {
+          carrier: "Magic Trans",
+          name: bestMagicTransTariff.name,
+          sum: bestMagicTransTariff.deliverySum,
+          addVat: false,
+          min: bestMagicTransTariff.periodMin,
+          max: bestMagicTransTariff.periodMax,
+        }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
 
   return (
     <>
@@ -2097,7 +2133,7 @@ export default function Calculator() {
         onClear={clearHistory}
       />
 
-      {bestCdekTariff && bestDellinTariff ? (
+      {comparisonTariffs.length >= 2 ? (
         <div className="card">
           <h2>Сравнение</h2>
           <div className="table-wrap">
@@ -2112,27 +2148,10 @@ export default function Calculator() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  {
-                    carrier: "СДЭК",
-                    name: bestCdekTariff.name,
-                    sum: bestCdekTariff.deliverySum,
-                    includesVat: false,
-                    min: bestCdekTariff.periodMin,
-                    max: bestCdekTariff.periodMax,
-                  },
-                  {
-                    carrier: "Деловые Линии",
-                    name: bestDellinTariff.name,
-                    sum: bestDellinTariff.deliverySum,
-                    includesVat: true,
-                    min: bestDellinTariff.periodMin,
-                    max: bestDellinTariff.periodMax,
-                  },
-                ].map((item) => {
-                  const sumWithVat = item.includesVat
-                    ? item.sum
-                    : item.sum + item.sum * VAT_RATE;
+                {comparisonTariffs.map((item) => {
+                  const sumWithVat = item.addVat
+                    ? item.sum + item.sum * VAT_RATE
+                    : item.sum;
                   const total =
                     sumWithVat * (clientPays ? 1 + CLIENT_PAYS_MARKUP : 1);
                   return (
@@ -2156,7 +2175,7 @@ export default function Calculator() {
           </div>
           <p className="meta-line">
             Для СДЭК итог считается как стоимость + НДС {Math.round(VAT_RATE * 100)}%.
-            Цена Деловых Линий уже включает НДС.
+            Цены Деловых Линий и Magic Trans показаны в том виде, как их вернули API.
           </p>
         </div>
       ) : null}
@@ -2683,6 +2702,7 @@ export default function Calculator() {
           })}
           canShip={canShipAll}
           totalPlaces={totalPlacesAll}
+          onQuoteChange={setMagicTransQuote}
         />
       )}
     </>

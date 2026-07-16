@@ -69,6 +69,48 @@ export function filterMagicTransCities(
     .slice(0, 12);
 }
 
+export function parseMagicTransPublicAddressCosts(payload: unknown): {
+  base: number;
+  pickup: number;
+  delivery: number;
+} {
+  const record =
+    typeof payload === "object" && payload !== null && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  const result = record?.result;
+  const resultRecord =
+    typeof result === "object" && result !== null && !Array.isArray(result)
+      ? (result as Record<string, unknown>)
+      : null;
+  const addressCost = resultRecord?.addressCost;
+  const addressCostRecord =
+    typeof addressCost === "object" && addressCost !== null && !Array.isArray(addressCost)
+      ? (addressCost as Record<string, unknown>)
+      : null;
+
+  const parseCost = (value: unknown) => {
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+  const getTotal = (side: "from" | "to") => {
+    const entry = addressCostRecord?.[side];
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return 0;
+    return parseCost((entry as Record<string, unknown>).total);
+  };
+
+  return {
+    base: parseCost(resultRecord?.terminal),
+    pickup: getTotal("from"),
+    delivery: getTotal("to"),
+  };
+}
+
+export function calculateMagicTransInsurance(declaredValue: number): number {
+  const value = Number.isFinite(declaredValue) && declaredValue > 0 ? declaredValue : 0;
+  return Math.max(40, Math.round(value * 0.002 * 100) / 100);
+}
+
 export function buildMagicTransCalculatorPayload(params: {
   from: { cityId: string; terminalId?: string; address: string };
   to: { cityId: string; terminalId?: string; address: string };
@@ -97,7 +139,7 @@ export function buildMagicTransCalculatorPayload(params: {
   return {
     from: {
       city: params.from.cityId,
-      terminal: fromTerminal ? params.from.terminalId ?? "" : "",
+      terminal: params.from.terminalId ?? "",
       address: fromTerminal ? "" : params.from.address,
       lat: "",
       lon: "",
@@ -105,7 +147,7 @@ export function buildMagicTransCalculatorPayload(params: {
     },
     to: {
       city: params.to.cityId,
-      terminal: toTerminal ? params.to.terminalId ?? "" : "",
+      terminal: params.to.terminalId ?? "",
       address: toTerminal ? "" : params.to.address,
       lat: "",
       lon: "",

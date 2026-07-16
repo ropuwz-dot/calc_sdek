@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   buildMagicTransCalculatorPayload,
+  calculateMagicTransInsurance,
   filterMagicTransCities,
+  parseMagicTransPublicAddressCosts,
 } from "../lib/magicTransPayload";
 
 const onePlace = {
@@ -57,6 +59,45 @@ test("Magic Trans payload selects terminal delivery and preserves dimensions in 
     height: 0.3,
     price: 0,
   });
+});
+
+test("Magic Trans payload retains the terminal GUID for door pickup", () => {
+  const payload = buildMagicTransCalculatorPayload({
+    from: {
+      cityId: "from",
+      terminalId: "servicing-terminal-from",
+      address: "Воронеж, Ленинский проспект, 158/3",
+    },
+    to: { cityId: "to", terminalId: "terminal-to", address: "" },
+    mode: "door-warehouse",
+    pickupDate: "2026-07-16",
+    places: [onePlace],
+  });
+
+  assert.equal(payload.options.fromTerminal, false);
+  assert.equal(payload.from.terminal, "servicing-terminal-from");
+  assert.equal(payload.from.address, "Воронеж, Ленинский проспект, 158/3");
+});
+
+test("Magic Trans public calculator exposes base tariff and address charges", () => {
+  assert.deepEqual(
+    parseMagicTransPublicAddressCosts({
+      result: {
+        terminal: "750",
+        addressCost: {
+          from: { total: 800 },
+          to: { total: "650" },
+        },
+      },
+    }),
+    { base: 750, pickup: 800, delivery: 650 }
+  );
+});
+
+test("Magic Trans insurance has a minimum of 40 rubles", () => {
+  assert.equal(calculateMagicTransInsurance(0), 40);
+  assert.equal(calculateMagicTransInsurance(10_000), 40);
+  assert.equal(calculateMagicTransInsurance(125_000), 250);
 });
 
 test("Magic Trans city matching ranks the exact city above regional matches", () => {

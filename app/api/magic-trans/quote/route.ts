@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     const toAddress = String(body.toAddress ?? "").trim().slice(0, 300);
     const fromTerminalId = String(body.fromTerminalId ?? "").trim();
     const toTerminalId = String(body.toTerminalId ?? "").trim();
+    const declaredValue = Number(body.declaredValue ?? 0);
     const items: PositionInput[] = (body.items ?? []).map((item) => ({
       article: String(item.article ?? ""),
       qty: Number(item.qty),
@@ -53,6 +54,12 @@ export async function POST(request: NextRequest) {
     }
     if (!VALID_MODES.includes(mode)) {
       return NextResponse.json({ ok: false, message: "Укажите режим доставки." }, { status: 400 });
+    }
+    if (!Number.isFinite(declaredValue) || declaredValue < 0 || declaredValue > 1_000_000_000) {
+      return NextResponse.json(
+        { ok: false, message: "Укажите корректную объявленную стоимость груза." },
+        { status: 400 }
+      );
     }
     if (!fromCityId || !toCityId) {
       return NextResponse.json(
@@ -123,6 +130,7 @@ export async function POST(request: NextRequest) {
       toTerminalId: mode.endsWith("warehouse") ? toTerminalId : undefined,
       fromAddress: mode.startsWith("door") ? fromAddress : undefined,
       toAddress: mode.endsWith("door") ? toAddress : undefined,
+      declaredValue,
       mode,
       places: [...packing.places, ...manualPlacesResult.places],
     });
