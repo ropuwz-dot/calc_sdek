@@ -90,7 +90,21 @@ export function parseMagicTransPublicAddressCosts(payload: unknown): {
       : null;
 
   const parseCost = (value: unknown) => {
-    const parsed = typeof value === "number" ? value : Number(value);
+    let normalized = value;
+    if (typeof value === "string") {
+      const compact = value.replace(/\s/g, "");
+      if (/^[+-]?\d{1,3}(,\d{3})+$/.test(compact)) {
+        normalized = compact.replace(/,/g, "");
+      } else if (compact.includes(",") && compact.includes(".")) {
+        normalized =
+          compact.lastIndexOf(",") > compact.lastIndexOf(".")
+            ? compact.replace(/\./g, "").replace(",", ".")
+            : compact.replace(/,/g, "");
+      } else {
+        normalized = compact.replace(",", ".");
+      }
+    }
+    const parsed = typeof normalized === "number" ? normalized : Number(normalized);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   };
   const getTotal = (side: "from" | "to") => {

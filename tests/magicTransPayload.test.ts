@@ -94,6 +94,36 @@ test("Magic Trans public calculator exposes base tariff and address charges", ()
   );
 });
 
+test("Magic Trans public calculator parses tariff with a space thousands separator", () => {
+  assert.deepEqual(
+    parseMagicTransPublicAddressCosts({
+      result: {
+        terminal: "1 150",
+        addressCost: {
+          from: { total: 800 },
+          to: { total: 600 },
+        },
+      },
+    }),
+    { base: 1150, pickup: 800, delivery: 600 }
+  );
+});
+
+test("Magic Trans public calculator parses localized thousands and decimals", () => {
+  assert.deepEqual(
+    parseMagicTransPublicAddressCosts({
+      result: {
+        terminal: "1,150",
+        addressCost: {
+          from: { total: "1 150,50" },
+          to: { total: "1,15" },
+        },
+      },
+    }),
+    { base: 1150, pickup: 1150.5, delivery: 1.15 }
+  );
+});
+
 test("Magic Trans insurance has a minimum of 40 rubles", () => {
   assert.equal(calculateMagicTransInsurance(0), 40);
   assert.equal(calculateMagicTransInsurance(10_000), 40);
