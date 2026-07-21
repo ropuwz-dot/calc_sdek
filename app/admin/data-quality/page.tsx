@@ -122,6 +122,14 @@ export default async function DataQualityPage() {
                 <div className="stat-value">{result.catalog.stats.packingOnlyArticles}</div>
                 <div className="stat-label">артикулов только в упаковке (нет в справочнике)</div>
               </div>
+              <div className="stat">
+                <div className="stat-value">{result.catalog.stats.compositeArticleCount}</div>
+                <div className="stat-label">составных артикулов</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value">{result.catalog.stats.compositePlaceCount}</div>
+                <div className="stat-label">мест в составе комплектов</div>
+              </div>
             </div>
             <p className="meta-line">
               Найдено блоков: справочник — {result.catalog.stats.catalogBlocks},

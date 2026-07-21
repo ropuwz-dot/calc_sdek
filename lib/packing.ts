@@ -188,6 +188,46 @@ function packItem(item: PositionInput, catalog: Catalog): ItemResult {
     return fail(product.name);
   }
 
+  const compositePlaces = catalog.composites[article] ?? [];
+  if (compositePlaces.length > 0) {
+    for (const compositePlace of compositePlaces) {
+      const component = catalog.products[compositePlace.componentArticle];
+      if (!component) {
+        errors.push(
+          `Для составного артикула ${article} не найден артикул места ${compositePlace.componentArticle} (лист «${compositePlace.sheet}», строка ${compositePlace.rowNumber}).`
+        );
+        continue;
+      }
+      if ((catalog.composites[compositePlace.componentArticle] ?? []).length > 0) {
+        errors.push(
+          `Для составного артикула ${article} задан вложенный состав через ${compositePlace.componentArticle}; укажите физический артикул места.`
+        );
+        continue;
+      }
+      const componentSpec = unitSpec(component);
+      if (!componentSpec) {
+        errors.push(
+          `Для места ${compositePlace.placeNumber} составного артикула ${article} не заполнены ДШВ или вес артикула ${compositePlace.componentArticle}.`
+        );
+        continue;
+      }
+      places.push(
+        toPlace(
+          article,
+          {
+            ...componentSpec,
+            label: `Комплект: место ${compositePlace.placeNumber} — ${compositePlace.componentArticle}`,
+          },
+          item.qty * compositePlace.count
+        )
+      );
+    }
+    return {
+      item: { article, name: product.name, requestedQty: item.qty, warnings, errors },
+      places: errors.length > 0 ? [] : places,
+    };
+  }
+
   const allRules = catalog.rules[article] ?? [];
   const usableRules = allRules
     .filter(ruleComplete)

@@ -46,6 +46,16 @@ export interface PackingRule {
   rowNumber: number;
 }
 
+/** Одно фиксированное место в составе одной единицы составного артикула. */
+export interface CompositePlaceRule {
+  article: string;
+  placeNumber: number;
+  componentArticle: string;
+  count: number;
+  sheet: string;
+  rowNumber: number;
+}
+
 export interface CatalogIssue {
   sheet: string;
   rowNumber: number;
@@ -61,6 +71,8 @@ export interface CatalogStats {
   articlesWithRules: number;
   /** Артикулы, которые есть только в упаковке (без строки в основном справочнике) */
   packingOnlyArticles: number;
+  compositeArticleCount: number;
+  compositePlaceCount: number;
   catalogBlocks: number;
   packingBlocks: number;
   skippedCalcBlocks: number;
@@ -72,6 +84,8 @@ export interface Catalog {
   products: Record<string, CatalogProduct>;
   /** Правила групповой упаковки по нормализованному артикулу */
   rules: Record<string, PackingRule[]>;
+  /** Фиксированные места составных артикулов по артикулу комплекта */
+  composites: Record<string, CompositePlaceRule[]>;
   duplicateArticles: string[];
   issues: CatalogIssue[];
   suspicious: CatalogIssue[];
@@ -204,6 +218,45 @@ function analyzeHeaderRow(row: (string | number | boolean)[]): HeaderAnalysis {
   return { kind: null, columns: [] };
 }
 
+interface CompositeHeader {
+  articleIndex: number;
+  placeNumberIndex: number;
+  componentArticleIndex: number;
+  countIndex: number;
+}
+
+function analyzeCompositeHeaderRow(
+  row: (string | number | boolean)[]
+): CompositeHeader | null {
+  const headers = row.map((cell) => normHeader(cellText(cell)));
+  const articleIndex = headers.findIndex((header) =>
+    header.includes("артикул комплекта")
+  );
+  const placeNumberIndex = headers.findIndex(
+    (header) =>
+      header === "место" ||
+      header === "места" ||
+      header.includes("номер места")
+  );
+  const componentArticleIndex = headers.findIndex(
+    (header) =>
+      header.includes("артикул места") || header.includes("артикул компонента")
+  );
+  const countIndex = headers.findIndex((header) =>
+    header.includes("количество мест")
+  );
+
+  if (
+    articleIndex < 0 ||
+    placeNumberIndex < 0 ||
+    componentArticleIndex < 0 ||
+    countIndex < 0
+  ) {
+    return null;
+  }
+  return { articleIndex, placeNumberIndex, componentArticleIndex, countIndex };
+}
+
 // ---------- Парсинг ----------
 
 const SUSPICIOUS_DIM_CM = 500;
@@ -216,6 +269,7 @@ export function parseCatalog(
 ): Catalog {
   const products: Record<string, CatalogProduct> = {};
   const rules: Record<string, PackingRule[]> = {};
+  const composites: Record<string, CompositePlaceRule[]> = {};
   const issues: CatalogIssue[] = [];
   const suspicious: CatalogIssue[] = [];
   const duplicateArticles = new Set<string>();
@@ -225,6 +279,7 @@ export function parseCatalog(
 
   for (const sheet of sheets) {
     let block: HeaderAnalysis = { kind: null, columns: [] };
+    let compositeHeader: CompositeHeader | null = null;
 
     for (let r = 0; r < sheet.rows.length; r++) {
       const row = sheet.rows[r] ?? [];
@@ -234,12 +289,78 @@ export function parseCatalog(
       if (isEmpty) continue;
 
       // Не шапка ли это нового блока?
+      const detectedCompositeHeader = analyzeCompositeHeaderRow(row);
+      if (detectedCompositeHeader) {
+        compositeHeader = detectedCompositeHeader;
+        block = { kind: null, columns: [] };
+        continue;
+      }
+
       const header = analyzeHeaderRow(row);
       if (header.kind !== null) {
+        compositeHeader = null;
         block = header;
         if (header.kind === "catalog") catalogBlocks++;
         else if (header.kind === "packing") packingBlocks++;
         else skippedCalcBlocks++;
+        continue;
+      }
+
+      if (compositeHeader) {
+        const article = normalizeArticle(
+          cellText(row[compositeHeader.articleIndex])
+        );
+        const componentArticle = normalizeArticle(
+          cellText(row[compositeHeader.componentArticleIndex])
+        );
+        if (article === "" && componentArticle === "") continue;
+
+        const placeNumber = cellNumber(row[compositeHeader.placeNumberIndex]);
+        const count = cellNumber(row[compositeHeader.countIndex]);
+        if (
+          article === "" ||
+          componentArticle === "" ||
+          placeNumber === null ||
+          !Number.isInteger(placeNumber) ||
+          placeNumber <= 0 ||
+          count === null ||
+          !Number.isInteger(count) ||
+          count <= 0
+        ) {
+          issues.push({
+            sheet: sheet.title,
+            rowNumber,
+            message:
+              "Некорректная строка составного артикула: заполните артикул комплекта, номер места, артикул места и положительное целое количество мест.",
+          });
+          continue;
+        }
+
+        if (count > SUSPICIOUS_QTY) {
+          suspicious.push({
+            sheet: sheet.title,
+            rowNumber,
+            message: `${article}: подозрительное количество мест в комплекте = ${count}.`,
+          });
+        }
+
+        const list = (composites[article] ??= []);
+        if (list.some((item) => item.placeNumber === placeNumber)) {
+          issues.push({
+            sheet: sheet.title,
+            rowNumber,
+            message: `${article}: повторный номер места ${placeNumber} — использована первая строка.`,
+          });
+          continue;
+        }
+        list.push({
+          article,
+          placeNumber,
+          componentArticle,
+          count,
+          sheet: sheet.title,
+          rowNumber,
+        });
         continue;
       }
 
@@ -404,36 +525,82 @@ export function parseCatalog(
     }
   }
 
+  for (const [article, places] of Object.entries(composites)) {
+    places.sort((a, b) => a.placeNumber - b.placeNumber);
+    const first = places[0];
+    if (!products[article]) {
+      issues.push({
+        sheet: first.sheet,
+        rowNumber: first.rowNumber,
+        message: `${article}: составной артикул не найден в основном справочнике.`,
+      });
+    }
+    for (const place of places) {
+      if (!products[place.componentArticle]) {
+        issues.push({
+          sheet: place.sheet,
+          rowNumber: place.rowNumber,
+          message: `${place.componentArticle}: артикул места для комплекта ${article} не найден в справочнике.`,
+        });
+      } else if ((composites[place.componentArticle] ?? []).length > 0) {
+        issues.push({
+          sheet: place.sheet,
+          rowNumber: place.rowNumber,
+          message: `${article}: вложенный состав через ${place.componentArticle} не поддерживается; укажите физический артикул места.`,
+        });
+      }
+    }
+  }
+
   const productList = Object.values(products);
   const mainList = productList.filter((p) => !p.fromPackingOnly);
-  const isComplete = (p: CatalogProduct) =>
+  const hasDims = (p: CatalogProduct) =>
     p.lengthCm !== null &&
     p.widthCm !== null &&
     p.heightCm !== null &&
     p.lengthCm > 0 &&
     p.widthCm > 0 &&
-    p.heightCm > 0 &&
-    p.weightKg !== null &&
-    p.weightKg > 0;
+    p.heightCm > 0;
+  const hasWeight = (p: CatalogProduct) =>
+    p.weightKg !== null && p.weightKg > 0;
+  const compositeComponents = (article: string) =>
+    (composites[article] ?? [])
+      .map((place) => products[place.componentArticle])
+      .filter((product): product is CatalogProduct => Boolean(product))
+      .filter((product) => (composites[product.article] ?? []).length === 0);
+  const hasCompositeDims = (article: string) => {
+    const places = composites[article] ?? [];
+    const components = compositeComponents(article);
+    return places.length > 0 && components.length === places.length && components.every(hasDims);
+  };
+  const hasCompositeWeight = (article: string) => {
+    const places = composites[article] ?? [];
+    const components = compositeComponents(article);
+    return places.length > 0 && components.length === places.length && components.every(hasWeight);
+  };
+  const hasComposite = (article: string) =>
+    (composites[article] ?? []).length > 0;
+  const effectiveHasDims = (p: CatalogProduct) =>
+    hasComposite(p.article) ? hasCompositeDims(p.article) : hasDims(p);
+  const effectiveHasWeight = (p: CatalogProduct) =>
+    hasComposite(p.article) ? hasCompositeWeight(p.article) : hasWeight(p);
+  const isComplete = (p: CatalogProduct) =>
+    effectiveHasDims(p) && effectiveHasWeight(p);
 
   const stats: CatalogStats = {
     productCount: mainList.length,
     productsComplete: mainList.filter(isComplete).length,
-    productsWithoutWeight: mainList.filter(
-      (p) => p.weightKg === null || p.weightKg <= 0
-    ).length,
-    productsWithoutDims: mainList.filter(
-      (p) =>
-        p.lengthCm === null ||
-        p.widthCm === null ||
-        p.heightCm === null ||
-        p.lengthCm <= 0 ||
-        p.widthCm <= 0 ||
-        p.heightCm <= 0
-    ).length,
+    productsWithoutWeight: mainList.filter((p) => !effectiveHasWeight(p)).length,
+    productsWithoutDims: mainList.filter((p) => !effectiveHasDims(p)).length,
     ruleCount: Object.values(rules).reduce((sum, list) => sum + list.length, 0),
     articlesWithRules: Object.keys(rules).length,
     packingOnlyArticles: productList.length - mainList.length,
+    compositeArticleCount: Object.keys(composites).length,
+    compositePlaceCount: Object.values(composites).reduce(
+      (sum, list) =>
+        sum + list.reduce((listSum, place) => listSum + place.count, 0),
+      0
+    ),
     catalogBlocks,
     packingBlocks,
     skippedCalcBlocks,
@@ -443,6 +610,7 @@ export function parseCatalog(
     spreadsheetTitle,
     products,
     rules,
+    composites,
     duplicateArticles: [...duplicateArticles],
     issues,
     suspicious,

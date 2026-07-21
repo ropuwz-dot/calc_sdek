@@ -42,6 +42,10 @@ export async function GET(request: NextRequest) {
       ruleQtys: (result.catalog.rules[p.article] ?? [])
         .map((r) => r.qty)
         .sort((a, b) => a - b),
+      compositePlaceCount: (result.catalog.composites[p.article] ?? []).reduce(
+        (sum, place) => sum + place.count,
+        0
+      ),
     })
   );
 

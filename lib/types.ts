@@ -10,6 +10,8 @@ export interface ProductSuggestion {
   unitDataComplete: boolean;
   /** Размеры доступных групповых упаковок, шт */
   ruleQtys: number[];
+  /** Сколько фиксированных мест образует одна единица составного артикула */
+  compositePlaceCount: number;
 }
 
 export interface PositionInput {

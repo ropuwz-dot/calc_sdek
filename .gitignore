@@ -21,6 +21,9 @@
 *.pem
 npm-debug.log*
 
+# local backups
+/backups/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

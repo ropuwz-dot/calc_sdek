@@ -1835,11 +1835,13 @@ export default function Calculator() {
                           <strong>{p.article}</strong>
                           {p.name ? ` — ${p.name}` : ""}
                           <span className="suggest-meta">
-                            {p.ruleQtys.length > 0
-                              ? ` упаковки: ${p.ruleQtys.join(", ")} шт`
-                              : p.unitDataComplete
-                                ? " только поштучно"
-                                : " ⚠ нет данных"}
+                            {p.compositePlaceCount > 0
+                              ? ` составной: ${p.compositePlaceCount} мест на 1 шт`
+                              : p.ruleQtys.length > 0
+                                ? ` упаковки: ${p.ruleQtys.join(", ")} шт`
+                                : p.unitDataComplete
+                                  ? " только поштучно"
+                                  : " ⚠ нет данных"}
                           </span>
                         </button>
                       </li>
