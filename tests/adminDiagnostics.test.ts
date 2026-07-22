@@ -7,6 +7,7 @@ import {
   diagnosticFailureFromMessage,
   sanitizeDiagnosticText,
   toPublicCarrierStatus,
+  toPublicCarrierStatuses,
 } from "../lib/carrierDiagnostics";
 
 test("diagnostics admin policy accepts only rop.uwz@gmail.com", () => {
@@ -85,6 +86,46 @@ test("public carrier status strips diagnostic details", () => {
       latencyMs: 820,
     }
   );
+});
+
+test("public health response strips details from recorded carrier diagnostics", () => {
+  const diagnostics = {
+    cdek: {
+      carrier: "cdek" as const,
+      status: "ok" as const,
+      stage: "ready" as const,
+      code: "OK",
+      reason: "Интеграция отвечает.",
+      latencyMs: 50,
+      checkedAt: "2026-07-22T00:00:00.000Z",
+    },
+    dellin: {
+      carrier: "dellin" as const,
+      status: "ok" as const,
+      stage: "ready" as const,
+      code: "OK",
+      reason: "Интеграция отвечает.",
+      latencyMs: 70,
+      checkedAt: "2026-07-22T00:00:01.000Z",
+    },
+    magicTrans: {
+      carrier: "magicTrans" as const,
+      status: "down" as const,
+      stage: "auth" as const,
+      code: "MT_AUTH_REJECTED",
+      reason: "Magic Trans отклонили токен авторизации.",
+      httpStatus: 401,
+      latencyMs: 820,
+      checkedAt: "2026-07-22T00:00:02.000Z",
+    },
+  };
+
+  assert.deepEqual(toPublicCarrierStatuses(diagnostics), {
+    cdek: { status: "ok", checkedAt: "2026-07-22T00:00:00.000Z", latencyMs: 50 },
+    dellin: { status: "ok", checkedAt: "2026-07-22T00:00:01.000Z", latencyMs: 70 },
+    magicTrans: { status: "down", checkedAt: "2026-07-22T00:00:02.000Z", latencyMs: 820 },
+  });
+  assert.equal(diagnostics.magicTrans.reason, "Magic Trans отклонили токен авторизации.");
 });
 
 test("diagnostic failure classifier assigns safe carrier-specific codes", () => {

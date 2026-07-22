@@ -1,62 +1,33 @@
 import { NextResponse } from "next/server";
 import { requireSheetsUser } from "@/lib/apiAuth";
-import { checkCdekHealth } from "@/lib/cdek";
-import { checkDellinHealth } from "@/lib/dellin";
-import { checkMagicTransHealth } from "@/lib/magicTrans";
-
-type CarrierStatus = {
-  status: "ok" | "down";
-  checkedAt: string;
-  latencyMs: number;
-};
-
-type CarrierKey = "cdek" | "dellin" | "magicTrans";
+import {
+  toPublicCarrierStatuses,
+  type CarrierKey,
+  type PublicCarrierStatus,
+} from "@/lib/carrierDiagnostics";
+import { runAllCarrierDiagnostics } from "@/lib/runCarrierDiagnostics";
 
 const HEALTH_CACHE_TTL_MS = 60 * 1000;
-const HEALTH_TIMEOUT_MS = 8 * 1000;
+type HealthResponse = Record<CarrierKey, PublicCarrierStatus>;
 
-const checks: Record<CarrierKey, () => Promise<{ ok: true } | { ok: false }>> = {
-  cdek: () => checkCdekHealth(HEALTH_TIMEOUT_MS),
-  dellin: () => checkDellinHealth(HEALTH_TIMEOUT_MS),
-  magicTrans: () => checkMagicTransHealth(),
-};
+let healthCache: { value: HealthResponse; at: number } | null = null;
+let pendingCheck: Promise<HealthResponse> | null = null;
 
-const healthCache = new Map<CarrierKey, { value: CarrierStatus; at: number }>();
-const pendingChecks = new Map<CarrierKey, Promise<CarrierStatus>>();
-
-async function checkCarrier(carrier: CarrierKey): Promise<CarrierStatus> {
-  const cached = healthCache.get(carrier);
-  if (cached && Date.now() - cached.at < HEALTH_CACHE_TTL_MS) {
-    return cached.value;
+async function checkCarriers(): Promise<HealthResponse> {
+  if (healthCache && Date.now() - healthCache.at < HEALTH_CACHE_TTL_MS) {
+    return healthCache.value;
   }
+  if (pendingCheck) return pendingCheck;
 
-  const pending = pendingChecks.get(carrier);
-  if (pending) return pending;
-
-  const task = (async () => {
-    const startedAt = Date.now();
-    let ok = false;
-    try {
-      const result = await checks[carrier]();
-      ok = result.ok;
-    } catch {
-      ok = false;
-    }
-
-    const value: CarrierStatus = {
-      status: ok ? "ok" : "down",
-      checkedAt: new Date().toISOString(),
-      latencyMs: Date.now() - startedAt,
-    };
-    healthCache.set(carrier, { value, at: Date.now() });
+  pendingCheck = runAllCarrierDiagnostics().then((diagnostics) => {
+    const value = toPublicCarrierStatuses(diagnostics);
+    healthCache = { value, at: Date.now() };
     return value;
-  })();
-
-  pendingChecks.set(carrier, task);
+  });
   try {
-    return await task;
+    return await pendingCheck;
   } finally {
-    pendingChecks.delete(carrier);
+    pendingCheck = null;
   }
 }
 
@@ -69,11 +40,5 @@ export async function GET() {
     );
   }
 
-  const [cdek, dellin, magicTrans] = await Promise.all([
-    checkCarrier("cdek"),
-    checkCarrier("dellin"),
-    checkCarrier("magicTrans"),
-  ]);
-
-  return NextResponse.json({ cdek, dellin, magicTrans });
+  return NextResponse.json(await checkCarriers());
 }

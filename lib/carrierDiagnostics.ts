@@ -162,3 +162,13 @@ export function toPublicCarrierStatus(diagnostic: CarrierDiagnostic): PublicCarr
     latencyMs: diagnostic.latencyMs,
   };
 }
+
+export function toPublicCarrierStatuses(
+  diagnostics: Record<CarrierKey, CarrierDiagnostic>
+): Record<CarrierKey, PublicCarrierStatus> {
+  return {
+    cdek: toPublicCarrierStatus(diagnostics.cdek),
+    dellin: toPublicCarrierStatus(diagnostics.dellin),
+    magicTrans: toPublicCarrierStatus(diagnostics.magicTrans),
+  };
+}
