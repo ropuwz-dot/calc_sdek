@@ -229,6 +229,10 @@ a {
   margin: 0;
 }
 
+.admin-diagnostics-action {
+  margin: 0 0 18px;
+}
+
 /* --- Формы калькулятора --- */
 
 .field {
