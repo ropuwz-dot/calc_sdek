@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { CarrierProbeResult } from "@/lib/carrierDiagnostics";
 import type {
   CityDto,
   DeliveryMode,
@@ -100,9 +101,15 @@ async function getCdekToken(timeoutMs?: number): Promise<
 
 export async function checkCdekHealth(
   timeoutMs = 5_000
-): Promise<{ ok: true } | { ok: false }> {
+): Promise<CarrierProbeResult> {
+  const config = getCdekConfig();
+  if (!config.ok) {
+    return { ok: false, stage: "config", message: config.message };
+  }
   const auth = await getCdekToken(timeoutMs);
-  return auth.ok ? { ok: true } : { ok: false };
+  return auth.ok
+    ? { ok: true }
+    : { ok: false, stage: "auth", message: auth.message };
 }
 
 // ---------- Подсказки городов ----------

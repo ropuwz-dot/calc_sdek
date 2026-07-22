@@ -3,6 +3,7 @@ import { requireSheetsUser } from "@/lib/apiAuth";
 import { loadCatalog } from "@/lib/catalog";
 import { parseManualPlaces } from "@/lib/manualPlaces";
 import { packItems, placesToCdekPackages } from "@/lib/packing";
+import { recordCarrierFailure } from "@/lib/runCarrierDiagnostics";
 import { calcTariffs, checkPvzLimits, checkSpecificPvz } from "@/lib/cdek";
 import type {
   DeliveryMode,
@@ -137,6 +138,7 @@ export async function POST(request: NextRequest) {
   const totalWeightKg = allPlaces.reduce((s, p) => s + p.weightKg * p.count, 0);
 
   // Вызов СДЭК + проверка ограничений ПВЗ (вес/габариты) для сторон «склад»
+  const carrierStartedAt = Date.now();
   const [cdek, fromPvzWarning, toPvzWarning] = await Promise.all([
     calcTariffs({
       fromCode,
@@ -173,6 +175,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (!cdek.ok) {
+    recordCarrierFailure({
+      carrier: "cdek",
+      stage: "calculator",
+      message: cdek.message,
+      latencyMs: Date.now() - carrierStartedAt,
+    });
     const response: QuoteResponse = { ok: false, message: cdek.message, packing };
     return NextResponse.json(response, { status: 502 });
   }

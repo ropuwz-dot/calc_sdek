@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { CarrierProbeResult } from "@/lib/carrierDiagnostics";
 import type {
   DeliveryMode,
   MagicTransCityDto,
@@ -475,11 +476,24 @@ export async function calculateMagicTransDelivery(params: {
   };
 }
 
-export async function checkMagicTransHealth(): Promise<
-  { ok: true } | { ok: false }
-> {
+export async function checkMagicTransHealth(): Promise<CarrierProbeResult> {
+  const configured = getMagicTransConfig();
+  if (!configured.ok) {
+    return { ok: false, stage: "config", message: configured.message };
+  }
   const access = await getAccessToken();
-  if (!access.ok) return { ok: false };
+  if (!access.ok) {
+    return { ok: false, stage: "auth", message: access.message };
+  }
   const result = await requestEcomm<TerritoryResponse[]>({ path: "/territory" });
-  return result.ok ? { ok: true } : { ok: false };
+  if (!result.ok) {
+    return { ok: false, stage: "directory", message: result.message };
+  }
+  return Array.isArray(result.data) && result.data.length > 0
+    ? { ok: true }
+    : {
+        ok: false,
+        stage: "response",
+        message: "Magic Trans не вернули справочник территорий.",
+      };
 }

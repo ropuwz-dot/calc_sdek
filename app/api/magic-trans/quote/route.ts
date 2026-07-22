@@ -4,6 +4,7 @@ import { loadCatalog } from "@/lib/catalog";
 import { calculateMagicTransDelivery } from "@/lib/magicTrans";
 import { parseManualPlaces } from "@/lib/manualPlaces";
 import { packItems } from "@/lib/packing";
+import { recordCarrierFailure } from "@/lib/runCarrierDiagnostics";
 import type {
   DeliveryMode,
   MagicTransQuoteRequest,
@@ -123,6 +124,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const carrierStartedAt = Date.now();
     const result = await calculateMagicTransDelivery({
       fromCityId,
       toCityId,
@@ -135,6 +137,12 @@ export async function POST(request: NextRequest) {
       places: [...packing.places, ...manualPlacesResult.places],
     });
     if (!result.ok) {
+      recordCarrierFailure({
+        carrier: "magicTrans",
+        stage: "calculator",
+        message: result.message,
+        latencyMs: Date.now() - carrierStartedAt,
+      });
       const response: MagicTransQuoteResponse = { ok: false, message: result.message, packing };
       return NextResponse.json(response, { status: 502 });
     }
@@ -146,6 +154,11 @@ export async function POST(request: NextRequest) {
     };
     return NextResponse.json(response);
   } catch {
+    recordCarrierFailure({
+      carrier: "magicTrans",
+      stage: "response",
+      message: "Внутренняя ошибка при расчете Magic Trans.",
+    });
     return NextResponse.json(
       { ok: false, message: "Внутренняя ошибка при расчете Magic Trans." },
       { status: 500 }

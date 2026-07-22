@@ -1,0 +1,83 @@
+.headingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.headingRow h2 {
+  margin-bottom: 6px;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.carrierCard {
+  border: 1px solid #dfe3e8;
+  border-radius: 10px;
+  padding: 16px;
+  background: #fafbfc;
+  min-width: 0;
+}
+
+.carrierTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 17px;
+}
+
+.details {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.details > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.details dt {
+  color: #667085;
+}
+
+.details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  grid-template-columns: 1fr !important;
+  gap: 3px !important;
+  padding-top: 6px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.eventReason {
+  min-width: 260px;
+  white-space: normal;
+}
+
+@media (max-width: 900px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .headingRow {
+    flex-direction: column;
+  }
+
+  .headingRow button {
+    width: 100%;
+  }
+}

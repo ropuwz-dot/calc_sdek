@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { CarrierProbeResult } from "@/lib/carrierDiagnostics";
 import type {
   DeliveryMode,
   DellinCityDto,
@@ -173,7 +174,12 @@ async function postDellinWithSession<T>(
 
 export async function checkDellinHealth(
   timeoutMs = 5_000
-): Promise<{ ok: true } | { ok: false }> {
+): Promise<CarrierProbeResult> {
+  const config = getDellinConfig();
+  if (!config.ok) {
+    return { ok: false, stage: "config", message: config.message };
+  }
+
   const [session, cities] = await Promise.all([
     getDellinSession(timeoutMs),
     postDellin<{ cities?: { cityID?: number }[] }>(
@@ -182,12 +188,22 @@ export async function checkDellinHealth(
       { timeoutMs }
     ),
   ]);
-  const cityAvailable =
-    cities.ok &&
-    cities.data.cities?.some(
-      (city) => typeof city.cityID === "number" && city.cityID > 0
-    );
-  return session.ok && cityAvailable ? { ok: true } : { ok: false };
+  if (!session.ok) {
+    return { ok: false, stage: "auth", message: session.message };
+  }
+  if (!cities.ok) {
+    return { ok: false, stage: "directory", message: cities.message };
+  }
+  const cityAvailable = cities.data.cities?.some(
+    (city) => typeof city.cityID === "number" && city.cityID > 0
+  );
+  return cityAvailable
+    ? { ok: true }
+    : {
+        ok: false,
+        stage: "response",
+        message: "Деловые Линии не вернули город в справочнике.",
+      };
 }
 
 export async function suggestDellinCities(

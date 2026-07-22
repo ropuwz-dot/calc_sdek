@@ -2,6 +2,7 @@ import Link from "next/link";
 import { readSession, type SessionData } from "@/lib/session";
 import { getValidAccessToken, getAuthConfig } from "@/lib/googleAuth";
 import { checkSpreadsheetAccess } from "@/lib/googleSheets";
+import { isDiagnosticsAdmin } from "@/lib/adminPolicy";
 import { UserBar } from "@/components/UserBar";
 import Calculator from "@/components/Calculator";
 
@@ -125,6 +126,12 @@ export default async function HomePage({
         <Link href="/admin/google-sheets-check">диагностика доступа</Link>
         {" · "}
         <Link href="/admin/data-quality">качество данных</Link>
+        {isDiagnosticsAdmin(session.email) ? (
+          <>
+            {" · "}
+            <Link href="/admin/diagnostics">диагностика перевозчиков</Link>
+          </>
+        ) : null}
       </p>
     </main>
   );

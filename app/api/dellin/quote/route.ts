@@ -4,6 +4,7 @@ import { loadCatalog } from "@/lib/catalog";
 import { calcDellinTariffs } from "@/lib/dellin";
 import { parseManualPlaces } from "@/lib/manualPlaces";
 import { packItems } from "@/lib/packing";
+import { recordCarrierFailure } from "@/lib/runCarrierDiagnostics";
 import type {
   DeliveryMode,
   DellinQuoteRequest,
@@ -153,6 +154,7 @@ async function handle(request: NextRequest) {
   }
 
   const allPlaces = [...packing.places, ...manualPlaces];
+  const carrierStartedAt = Date.now();
   const result = await calcDellinTariffs({
     fromCityCode,
     toCityCode,
@@ -183,6 +185,12 @@ async function handle(request: NextRequest) {
   });
 
   if (!result.ok) {
+    recordCarrierFailure({
+      carrier: "dellin",
+      stage: "calculator",
+      message: result.message,
+      latencyMs: Date.now() - carrierStartedAt,
+    });
     const response: DellinQuoteResponse = {
       ok: false,
       message: result.message,
